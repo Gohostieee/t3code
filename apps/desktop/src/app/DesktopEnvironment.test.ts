@@ -66,10 +66,12 @@ describe("DesktopEnvironment", () => {
         {},
         { VITE_DEV_SERVER_URL: "http://localhost:5173" },
       );
-      const production = yield* makeEnvironment();
+      const production = yield* makeEnvironment({}, { T3CODE_HOME: "/original-t3" });
+      assert.equal(production.displayName, "T4 Code (Beta)");
+      assert.equal(production.appUserModelId, "com.gohostieee.t4code");
 
-      assert.equal(development.stateDir, "/Users/alice/.t3/dev");
-      assert.equal(production.stateDir, "/Users/alice/.t3/userdata");
+      assert.equal(development.stateDir, "/Users/alice/.t4/dev");
+      assert.equal(production.stateDir, "/Users/alice/.t4/userdata");
     }),
   );
 });
