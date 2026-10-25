@@ -15,12 +15,17 @@ import * as ProjectService from "./ProjectService.ts";
 import * as ProjectSetupScriptRunner from "./ProjectSetupScriptRunner.ts";
 
 const threadId = "thread-1";
-const terminalId = "setup-setup";
-const event = { threadId, terminalId, sequence: 1, createdAt: "2026-01-01T00:00:00.000Z" };
+const terminalId = "task-setup";
+const workspaceId = "workspace-1";
+const event = { workspaceId, terminalId, sequence: 1, createdAt: "2026-01-01T00:00:00.000Z" };
 
 const openSnapshot = (history: string): TerminalSessionSnapshot => ({
-  threadId,
+  workspaceId,
   terminalId,
+  generation: "generation-1",
+  kind: "task",
+  primary: false,
+  taskStatus: "submitted",
   cwd: "/repo/.t3/worktrees/feature",
   worktreePath: null,
   status: "running",
@@ -36,15 +41,30 @@ const makeHarness = Effect.fn(function* (options: {
   readonly history?: string;
   readonly opening?: Deferred.Deferred<void>;
 }) {
+  let exited = false;
   const listeners = new Set<(event: TerminalEvent) => Effect.Effect<void>>();
   const writes = yield* Queue.unbounded<string>();
   const outputLines = yield* Queue.unbounded<string>();
   const terminals = Layer.mock(TerminalManager.TerminalManager)({
-    open: () =>
-      (options.opening
-        ? Deferred.succeed(options.opening, undefined).pipe(Effect.andThen(Effect.never))
-        : Effect.void
-      ).pipe(Effect.as(openSnapshot(options.history ?? ""))),
+    resolveWorkspace: () =>
+      Effect.succeed({
+        id: workspaceId,
+        projectId: ProjectId.make("project-1"),
+        cwd: "/repo/.t3/worktrees/feature",
+        worktreePath: "/repo/.t3/worktrees/feature",
+      }),
+    runTask: (input, readiness) =>
+      Effect.gen(function* () {
+        if (options.opening)
+          return yield* Deferred.succeed(options.opening, undefined).pipe(
+            Effect.andThen(Effect.never),
+          );
+        const snapshot = openSnapshot(options.history ?? "");
+        if (readiness) yield* readiness.onOpened(snapshot);
+        if (readiness) yield* readiness.beforeWrite;
+        if (!exited) yield* Queue.offer(writes, input.command);
+        return snapshot;
+      }),
     subscribe: (listener) =>
       Effect.sync(() => {
         listeners.add(listener);
@@ -67,6 +87,7 @@ const makeHarness = Effect.fn(function* (options: {
   );
   const start = runner.runForThread({
     threadId,
+    preferredTerminalId: "setup",
     worktreePath: "/repo/.t3/worktrees/feature",
     observeCompletion: { onOutputLine: (line) => Queue.offer(outputLines, line) },
     project: {
@@ -84,7 +105,12 @@ const makeHarness = Effect.fn(function* (options: {
     },
   });
   const emit = (terminalEvent: TerminalEvent) =>
-    Effect.forEach([...listeners], (listener) => listener(terminalEvent), { discard: true });
+    Effect.gen(function* () {
+      if (terminalEvent.type === "exited" || terminalEvent.type === "closed") exited = true;
+      yield* Effect.forEach([...listeners], (listener) => listener(terminalEvent), {
+        discard: true,
+      });
+    });
   return { start, listeners, writes, outputLines, emit };
 });
 

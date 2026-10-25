@@ -15,7 +15,7 @@ function append(
 ) {
   return applyTerminalAttachStreamEvent(
     state,
-    { type: "output", data, threadId: "thread", terminalId: "term-1" },
+    { type: "output", data, workspaceId: "thread", terminalId: "term-1" },
     limit,
   );
 }

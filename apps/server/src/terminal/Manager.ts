@@ -3476,50 +3476,77 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   const write: TerminalManager["Service"]["write"] = (input) =>
     withWorkspaceLock(input.workspaceId, writeLocked(input));
 
-  const taskSubmissions = new Map<string, Deferred.Deferred<TerminalSessionSnapshot, TerminalError>>();
+  const taskSubmissions = new Map<
+    string,
+    Deferred.Deferred<TerminalSessionSnapshot, TerminalError>
+  >();
   const runTask: TerminalManager["Service"]["runTask"] = Effect.fn("terminal.runTask")(
     function* (input, readiness) {
-      const key = toSessionKey(input.workspaceId, input.terminalId);
-      const pending = taskSubmissions.get(key);
-      if (pending) {
-        const result = yield* Deferred.await(pending);
-        if (readiness) yield* readiness.onOpened(result);
-        return result;
-      }
-      const done = yield* Deferred.make<TerminalSessionSnapshot, TerminalError>();
-      taskSubmissions.set(key, done);
-      return yield* Effect.gen(function* () {
-        const prepared = yield* checkoutLifecycleLock.withPermit(withWorkspaceLock(input.workspaceId,
-          Effect.gen(function* () {
-            if (!input.terminalId.startsWith("task-")) return yield* new TerminalWorkspaceError({
-              message: "Automated commands require a dedicated task terminal.",
-            });
-            const existing = yield* restoreSession(input.workspaceId, input.terminalId);
-            if (Option.isSome(existing)) {
-              if (existing.value.taskStatus !== "submitted") return yield* new TerminalWorkspaceError({
-                message: "This task has an unknown execution outcome. Inspect its output before deliberately running it again; retrying will not replay the command.",
-              });
-              return { submitted: true, snapshot: snapshot(existing.value) };
-            }
-            return { submitted: false, snapshot: yield* openLocked(input) };
-          }),
-        ));
-        if (readiness) yield* readiness.onOpened(prepared.snapshot);
-        if (prepared.submitted) return prepared.snapshot;
-        if (readiness) yield* readiness.beforeWrite;
-        return yield* withWorkspaceLock(input.workspaceId, Effect.gen(function* () {
-          yield* writeLocked({
-            workspaceId: input.workspaceId, terminalId: input.terminalId,
-            generation: prepared.snapshot.generation, data: input.command,
-          }, true);
-          const session = yield* requireSession(input.workspaceId, input.terminalId);
-          session.taskStatus = "submitted";
-          yield* persistSessionMetadata(session);
-          return snapshot(session);
-        }).pipe(Effect.uninterruptible));
-      }).pipe(Effect.onExit((exit) => Deferred.done(done, exit).pipe(
-        Effect.andThen(Effect.sync(() => taskSubmissions.delete(key))),
-      )));
+      return yield* Effect.uninterruptibleMask((restore) =>
+        Effect.gen(function* () {
+          const key = toSessionKey(input.workspaceId, input.terminalId);
+          const pending = taskSubmissions.get(key);
+          if (pending) {
+            const result = yield* restore(Deferred.await(pending));
+            if (readiness) yield* readiness.onOpened(result);
+            return result;
+          }
+          const done = Deferred.makeUnsafe<TerminalSessionSnapshot, TerminalError>();
+          taskSubmissions.set(key, done);
+          return yield* restore(
+            Effect.gen(function* () {
+              const prepared = yield* checkoutLifecycleLock.withPermit(
+                withWorkspaceLock(
+                  input.workspaceId,
+                  Effect.gen(function* () {
+                    if (!input.terminalId.startsWith("task-"))
+                      return yield* new TerminalWorkspaceError({
+                        message: "Automated commands require a dedicated task terminal.",
+                      });
+                    const existing = yield* restoreSession(input.workspaceId, input.terminalId);
+                    if (Option.isSome(existing)) {
+                      if (existing.value.taskStatus !== "submitted")
+                        return yield* new TerminalWorkspaceError({
+                          message:
+                            "This task has an unknown execution outcome. Inspect its output before deliberately running it again; retrying will not replay the command.",
+                        });
+                      return { submitted: true, snapshot: snapshot(existing.value) };
+                    }
+                    return { submitted: false, snapshot: yield* openLocked(input) };
+                  }),
+                ),
+              );
+              if (readiness) yield* readiness.onOpened(prepared.snapshot);
+              if (prepared.submitted) return prepared.snapshot;
+              if (readiness) yield* readiness.beforeWrite;
+              return yield* withWorkspaceLock(
+                input.workspaceId,
+                Effect.gen(function* () {
+                  yield* writeLocked(
+                    {
+                      workspaceId: input.workspaceId,
+                      terminalId: input.terminalId,
+                      generation: prepared.snapshot.generation,
+                      data: input.command,
+                    },
+                    true,
+                  );
+                  const session = yield* requireSession(input.workspaceId, input.terminalId);
+                  session.taskStatus = "submitted";
+                  yield* persistSessionMetadata(session);
+                  return snapshot(session);
+                }).pipe(Effect.uninterruptible),
+              );
+            }),
+          ).pipe(
+            Effect.onExit((exit) =>
+              Deferred.done(done, exit).pipe(
+                Effect.andThen(Effect.sync(() => taskSubmissions.delete(key))),
+              ),
+            ),
+          );
+        }),
+      );
     },
   );
 

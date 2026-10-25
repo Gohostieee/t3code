@@ -673,6 +673,73 @@ it.layer(
     }),
   );
 
+  it.effect("allows startup prompt input while one task waits for shell readiness", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter, baseDir } = yield* createManager();
+      const workspace = yield* manager.resolveWorkspace({
+        projectId: ProjectId.make("ready"),
+        cwd: baseDir,
+        worktreePath: null,
+      });
+      const input = {
+        ...openInput({ workspaceId: workspace.id, cwd: workspace.cwd }),
+        terminalId: "task-ready",
+        command: "npm test\r",
+      };
+      const opened = yield* Deferred.make<void>();
+      const ready = yield* Deferred.make<void>();
+      const task = yield* manager
+        .runTask(input, {
+          onOpened: () => Deferred.succeed(opened, undefined).pipe(Effect.asVoid),
+          beforeWrite: Deferred.await(ready),
+        })
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(opened);
+      const retry = yield* manager
+        .runTask(input)
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* manager.write({
+        workspaceId: workspace.id,
+        terminalId: input.terminalId,
+        data: "y\r",
+      });
+      expect(ptyAdapter.processes[0]!.writes).toEqual(["y\r"]);
+      yield* Deferred.succeed(ready, undefined);
+      const [first, second] = yield* Effect.all([Fiber.join(task), Fiber.join(retry)]);
+      expect(first.generation).toBe(second.generation);
+      expect(ptyAdapter.processes[0]!.writes).toEqual(["y\r", "npm test\r"]);
+    }),
+  );
+
+  it.effect("does not replay an interrupted task submission waiting for startup", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter, baseDir } = yield* createManager();
+      const workspace = yield* manager.resolveWorkspace({
+        projectId: ProjectId.make("interrupted-task"),
+        cwd: baseDir,
+        worktreePath: null,
+      });
+      const input = {
+        ...openInput({ workspaceId: workspace.id, cwd: workspace.cwd }),
+        terminalId: "task-interrupted",
+        command: "npm test\r",
+      };
+      const opened = yield* Deferred.make<void>();
+      const task = yield* manager
+        .runTask(input, {
+          onOpened: () => Deferred.succeed(opened, undefined).pipe(Effect.asVoid),
+          beforeWrite: Effect.never,
+        })
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(opened);
+      yield* Fiber.interrupt(task);
+      const retry = yield* manager.runTask(input).pipe(Effect.exit);
+      expect(Exit.isFailure(retry)).toBe(true);
+      expect(ptyAdapter.spawnInputs).toHaveLength(1);
+      expect(ptyAdapter.processes[0]!.writes).toEqual([]);
+    }),
+  );
+
   it.effect("keeps task retries idempotent without writing into interactive shells", () =>
     Effect.gen(function* () {
       const { manager, ptyAdapter, baseDir } = yield* createManager();

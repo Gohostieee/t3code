@@ -1,3 +1,4 @@
+import * as Fiber from "effect/Fiber";
 import type { TerminalError } from "@t3tools/contracts";
 import { ProjectId, type ProjectScript } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -287,7 +288,11 @@ export const make = Effect.gen(function* () {
       const abandon = settle(null).pipe(
         Effect.andThen(Deferred.succeed(promptReturned, undefined)),
       );
-      return { completion, unsubscribe, flushPartialLine, abandon,
+      return {
+        completion,
+        unsubscribe,
+        flushPartialLine,
+        abandon,
         restoreCompletion: (history: string, status: string) => {
           const matched = input.sentinelPattern.exec(history);
           return matched
@@ -475,33 +480,68 @@ export const make = Effect.gen(function* () {
           })
         : undefined;
 
-    const readiness = completionShell === "powershell" ? undefined : yield* watchShellReadiness({
-      workspaceId: workspace.id,
-      terminalId,
-      onStartupPrompt: observed?.flushPartialLine ?? Effect.void,
-    });
+    const readiness =
+      completionShell === "powershell"
+        ? undefined
+        : yield* watchShellReadiness({
+            workspaceId: workspace.id,
+            terminalId,
+            onStartupPrompt: observed?.flushPartialLine ?? Effect.void,
+          });
     const opened = yield* Deferred.make<void, TerminalError>();
-    yield* terminalManager.runTask({
-      workspaceId: workspace.id, terminalId, cwd, worktreePath: input.worktreePath,
-      env: { ...env, NO_COLOR: "1", FORCE_COLOR: "0" },
-      command: projectScriptTerminalInput(commandLine),
-    }, {
-      onOpened: (task) => (observed?.restoreCompletion(task.history, task.status) ?? Effect.void)
-        .pipe(Effect.andThen(Deferred.succeed(opened, undefined)), Effect.asVoid),
-      beforeWrite: readiness?.wait.pipe(Effect.asVoid) ?? Effect.void,
-    }).pipe(
-      Effect.catchCause((cause) => Effect.logWarning("project script command was not written", {
-        ...errorContext, terminalId, cause,
-      }).pipe(
-        Effect.andThen(Deferred.failCause(opened, cause)),
-        Effect.andThen(observed?.abandon ?? Effect.void),
-      )),
-      Effect.ensuring(Effect.sync(() => readiness?.unsubscribe())),
-      Effect.forkIn(serviceScope),
+    const submission = yield* terminalManager
+      .runTask(
+        {
+          workspaceId: workspace.id,
+          terminalId,
+          cwd,
+          worktreePath: input.worktreePath,
+          env: { ...env, NO_COLOR: "1", FORCE_COLOR: "0" },
+          command: projectScriptTerminalInput(commandLine),
+        },
+        {
+          onOpened: (task) =>
+            (observed?.restoreCompletion(task.history, task.status) ?? Effect.void).pipe(
+              Effect.andThen(Deferred.succeed(opened, undefined)),
+              Effect.asVoid,
+            ),
+          beforeWrite: readiness?.wait.pipe(Effect.asVoid) ?? Effect.void,
+        },
+      )
+      .pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("project script command was not written", {
+            ...errorContext,
+            terminalId,
+            cause,
+          }).pipe(
+            Effect.andThen(Deferred.failCause(opened, cause)),
+            Effect.andThen(observed?.abandon ?? Effect.void),
+          ),
+        ),
+        Effect.ensuring(Effect.sync(() => readiness?.unsubscribe())),
+        Effect.forkIn(serviceScope),
+      );
+    yield* Deferred.await(opened).pipe(
+      Effect.onError(() =>
+        Fiber.interrupt(submission).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              observed?.unsubscribe();
+              readiness?.unsubscribe();
+            }),
+          ),
+        ),
+      ),
+      Effect.mapError(
+        (cause) =>
+          new ProjectSetupScriptOperationError({
+            ...errorContext,
+            operation: "openTerminal",
+            cause,
+          }),
+      ),
     );
-    yield* Deferred.await(opened).pipe(Effect.mapError((cause) => new ProjectSetupScriptOperationError({
-      ...errorContext, operation: "openTerminal", cause,
-    })));
     const completion = observed?.completion.pipe(
       Effect.tap(({ exitCode }) =>
         exitCode === 0

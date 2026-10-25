@@ -1,3 +1,4 @@
+import { supportsNativeTerminalOutput } from "./nativeTerminalModule";
 import { useEnvironmentScope } from "../../state/session";
 import { Menu } from "../../components/ui/Menu";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -105,7 +106,11 @@ export function ProjectTerminalRouteScreen({
         : null,
     [workspace, readyWorkspaceId, focused, showLegacy, terminalId, selected?.state.summary?.cwd],
   );
-  const terminal = useAttachedTerminalSession({ environmentId, terminal: attachInput });
+  const terminal = useAttachedTerminalSession({
+    environmentId,
+    terminal: attachInput,
+    materializeBuffer: !supportsNativeTerminalOutput(),
+  });
   const git = useEnvironmentQuery(
     workspace && focused
       ? vcsEnvironment.status({ environmentId, input: { cwd: workspace.cwd } })
@@ -311,6 +316,7 @@ export function ProjectTerminalRouteScreen({
           <TerminalSurface
             terminalKey={`${environmentId}:${target.workspaceId}:${terminalId}`}
             buffer={terminal.buffer}
+            output={terminal.version === 0 ? null : terminal.output}
             isRunning={running}
             readOnly={!canOperate}
             style={{ flex: 1 }}

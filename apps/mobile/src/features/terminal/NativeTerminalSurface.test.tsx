@@ -116,7 +116,7 @@ it.each([null, 1])(
       EMPTY_TERMINAL_BUFFER_STATE,
       {
         type: "output",
-        threadId: "thread",
+        workspaceId: "thread",
         terminalId: "term-1",
         data: "retained",
       },
@@ -127,7 +127,7 @@ it.each([null, 1])(
       state,
       {
         type: "output",
-        threadId: "thread",
+        workspaceId: "thread",
         terminalId: "term-1",
         data: "-new",
       },
