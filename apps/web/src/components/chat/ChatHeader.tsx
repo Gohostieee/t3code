@@ -1,3 +1,4 @@
+import { CodebaseNavigationButton } from "../codebase/CodebaseNavigationButton";
 import {
   type EnvironmentId,
   type EditorId,
@@ -140,6 +141,7 @@ export const ChatHeader = memo(function ChatHeader({
           rightPanelOpen ? "pr-0" : "pr-16",
         )}
       >
+        <CodebaseNavigationButton compact />
         {activeProjectScripts && (
           <ProjectScriptsControl
             scripts={activeProjectScripts}

@@ -161,8 +161,25 @@ import {
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
+import { CodebaseError } from "./codebase.ts";
+import {
+  CodebaseReadInput,
+  CodebaseSnapshot,
+  CodebaseStartInput,
+  CodebaseRun,
+  CodebaseConfigureInput,
+  CodebaseCancelInput,
+  CodebaseCheckoutInput,
+  CodebaseProgress,
+} from "./codebaseRpc.ts";
 
 export const WS_METHODS = {
+  codebaseRead: "codebase.read",
+  codebaseConfigure: "codebase.configure",
+  codebaseStart: "codebase.start",
+  codebaseCancel: "codebase.cancel",
+  codebaseStatus: "codebase.status",
+  codebaseSubscribe: "codebase.subscribe",
   // Project registry methods
   projectsList: "projects.list",
   projectsAdd: "projects.add",
@@ -784,6 +801,37 @@ export const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeReso
 });
 
 export const WsRpcGroup = RpcGroup.make(
+  Rpc.make(WS_METHODS.codebaseRead, {
+    payload: CodebaseReadInput,
+    success: CodebaseSnapshot,
+    error: Schema.Union([CodebaseError, EnvironmentAuthorizationError]),
+  }),
+  Rpc.make(WS_METHODS.codebaseConfigure, {
+    payload: CodebaseConfigureInput,
+    success: CodebaseSnapshot,
+    error: Schema.Union([CodebaseError, EnvironmentAuthorizationError]),
+  }),
+  Rpc.make(WS_METHODS.codebaseStart, {
+    payload: CodebaseStartInput,
+    success: CodebaseRun,
+    error: Schema.Union([CodebaseError, EnvironmentAuthorizationError]),
+  }),
+  Rpc.make(WS_METHODS.codebaseCancel, {
+    payload: CodebaseCancelInput,
+    success: CodebaseRun,
+    error: Schema.Union([CodebaseError, EnvironmentAuthorizationError]),
+  }),
+  Rpc.make(WS_METHODS.codebaseStatus, {
+    payload: CodebaseCheckoutInput,
+    success: CodebaseProgress,
+    error: Schema.Union([CodebaseError, EnvironmentAuthorizationError]),
+  }),
+  Rpc.make(WS_METHODS.codebaseSubscribe, {
+    payload: CodebaseCheckoutInput,
+    success: CodebaseProgress,
+    error: Schema.Union([CodebaseError, EnvironmentAuthorizationError]),
+    stream: true,
+  }),
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,

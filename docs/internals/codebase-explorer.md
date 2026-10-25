@@ -1,0 +1,19 @@
+# Codebase explorer architecture
+
+`packages/contracts/src/codebase.ts` defines the portable version-1 manifest and scope graph, source references, bounded analyzer preferences, and durable attempt metadata. `codebaseRpc.ts` defines checkout-scoped operations. The artifact namespace is `<project-root>/.t3-codebase`, including when the project is a repository subdirectory. Provider instance IDs and runtime identifiers are excluded from portable artifacts.
+
+`CodebaseArtifactStore` owns decoding, inventory, source fingerprints, stable identities, source-anchor validation, revision comparisons, and atomic replacement. It inventories tracked and nonignored untracked source, excluding map/runtime/build/dependency artifacts. Text retention and the provider source bundle are bounded separately from node, edge, and serialized-document limits. Freshness compares source/configuration fingerprints; it does not compare the commit hash alone.
+
+`CodebaseService` resolves canonical checkouts against project worktrees. A pass creates an analysis-purpose orchestration thread with an immutable input binding and explicit model selection. The normal provider reactor, provider service, adapter, runtime ingestion, and durable projections execute the turn. A drainable worker observes the normalized final assistant output, validates it, publishes one scope, and records the acceptance revision. Provider completion and saved-map completion are distinct.
+
+Attempts serialize within a physical project checkout; identical active requests attach and later requests queue. Command IDs are idempotent and reject changed payloads. Terminal attempts remain available through analysis activity. Normal shell lists, search, and agent-awareness notifications exclude them. The analysis transcript cannot start another conversation turn or broaden runtime permissions.
+
+Publication and T3 branch switches use the checkout's Git-directory lock. Cooperating environments therefore share the lock even for repository subprojects. Publication rechecks source, Git state, parent, manifest, and destination revisions under the lock, then atomically replaces the scope through a flushed temporary file. An external editor or Git command does not obey this lock: post-publication checks and filesystem invalidation expose detected races without rolling back source. Stale lock recovery checks the recorded process without terminating it.
+
+The `saving` event records the expected accepted revision before writing. Startup reconciles that revision against disk; other active attempts become failed with explicit retry. Replaying orchestration history never republishes artifact files. Accepted maps remain readable in another clone without the originating runtime database.
+
+Adapter support is explicit: only Codex currently advertises `codebaseAnalysis`. Its inspection sessions suppress T3 MCP credentials, disable inherited MCP servers and execution/app/search tools, and enforce read-only sandbox policies at session and turn boundaries. Inspection intent persists in provider runtime bindings so session recovery cannot broaden it. Other adapters are disabled with a reason.
+
+Shared client atoms own environment-scoped RPC queries, subscriptions, selection inheritance, and command deduplication. Compact progress contains attempt state and reconciliation tokens, not graphs or transcripts. Web and desktop use the graph and inspector; mobile uses native outline/detail navigation. Only selected scope content and explicitly opened transcripts or source previews are requested.
+
+Focused tests live at `apps/server/integration/codebase.integration.test.ts`, using real Git checkouts, SQLite, the ordinary orchestration pipeline, and the deterministic adapter. Adapter permission tests and contract checks supplement this seam. Live-provider evidence belongs in the operational acceptance record and is distinct from fixture success.

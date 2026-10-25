@@ -1,3 +1,4 @@
+import { CodebaseService } from "./codebase/CodebaseService.ts";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -345,6 +346,7 @@ const makeWsRpcLayer = (
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
       const currentSessionId = currentSession.sessionId;
+      const codebase = yield* CodebaseService;
       const crypto = yield* Crypto.Crypto;
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
       const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
@@ -644,11 +646,17 @@ const makeWsRpcLayer = (
                     threadId,
                   }),
                 onSome: (nextThread) =>
-                  Option.some<OrchestrationShellStreamEvent>({
-                    kind: "thread-upserted" as const,
-                    sequence,
-                    thread: nextThread,
-                  }),
+                  nextThread.analysis
+                    ? Option.some<OrchestrationShellStreamEvent>({
+                        kind: "thread-removed",
+                        sequence,
+                        threadId,
+                      })
+                    : Option.some<OrchestrationShellStreamEvent>({
+                        kind: "thread-upserted" as const,
+                        sequence,
+                        thread: nextThread,
+                      }),
               }),
             ),
           ),
@@ -1630,6 +1638,12 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "workspace" },
           ),
+        [WS_METHODS.codebaseRead]: (input) => codebase.read(input),
+        [WS_METHODS.codebaseConfigure]: (input) => codebase.configure(input),
+        [WS_METHODS.codebaseStart]: (input) => codebase.startAnalysis(input),
+        [WS_METHODS.codebaseCancel]: (input) => codebase.cancel(input),
+        [WS_METHODS.codebaseStatus]: (input) => codebase.status(input),
+        [WS_METHODS.codebaseSubscribe]: (input) => Stream.unwrap(codebase.subscribe(input)),
         [WS_METHODS.projectsReadFile]: (input) =>
           observeRpcEffect(
             WS_METHODS.projectsReadFile,

@@ -599,6 +599,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             projectId: event.payload.projectId,
             title: event.payload.title,
             modelSelection: event.payload.modelSelection,
+            analysis: event.payload.analysis ?? null,
             runtimeMode: event.payload.runtimeMode,
             interactionMode: event.payload.interactionMode,
             branch: event.payload.branch,
@@ -621,6 +622,18 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           });
           return;
 
+        case "thread.analysis-set": {
+          const existing = yield* projectionThreadRepository.getById({
+            threadId: event.payload.threadId,
+          });
+          if (Option.isSome(existing))
+            yield* projectionThreadRepository.upsert({
+              ...existing.value,
+              analysis: event.payload.analysis,
+              updatedAt: event.payload.analysis.updatedAt,
+            });
+          return;
+        }
         case "thread.archived": {
           const existingRow = yield* projectionThreadRepository.getById({
             threadId: event.payload.threadId,

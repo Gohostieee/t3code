@@ -1,3 +1,4 @@
+import { CodebaseLink } from "../codebase/CodebaseRouteScreen";
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
 import { useNavigation } from "@react-navigation/native";
@@ -143,6 +144,7 @@ export function HomeRouteScreen() {
           onThreadSortOrderChange={setThreadSortOrder}
         />
 
+        <CodebaseLink />
         <HomeScreen
           catalogState={catalogState}
           environments={environments}

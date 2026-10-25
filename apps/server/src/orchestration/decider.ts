@@ -1,5 +1,6 @@
 import {
   EventId,
+  isCodebaseAnalysisActive,
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationReadModel,
@@ -368,6 +369,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           projectId: command.projectId,
           title: command.title,
           modelSelection: command.modelSelection,
+          ...(command.analysis ? { analysis: command.analysis } : {}),
           runtimeMode: command.runtimeMode,
           interactionMode: command.interactionMode,
           branch: command.branch,
@@ -375,6 +377,30 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
+      };
+    }
+
+    case "thread.analysis.set": {
+      const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
+      if (
+        !thread.analysis ||
+        thread.analysis.requestId !== command.analysis.requestId ||
+        !isCodebaseAnalysisActive(thread.analysis.status)
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "Analysis identity cannot change.",
+        });
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.analysis.updatedAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.analysis-set",
+        payload: { threadId: command.threadId, analysis: command.analysis },
       };
     }
 
@@ -636,6 +662,16 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      if (
+        thread.analysis &&
+        (command.modelSelection !== undefined ||
+          command.branch !== undefined ||
+          command.worktreePath !== undefined)
+      )
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "An analysis attempt keeps its original checkout and analyzer.",
+        });
       const branch =
         command.branch !== undefined &&
         command.expectedBranch !== undefined &&
@@ -703,11 +739,16 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.runtime-mode.set": {
-      yield* requireThread({
+      const analysisThread = yield* requireThread({
         readModel,
         command,
         threadId: command.threadId,
       });
+      if (analysisThread.analysis)
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "Analysis transcripts cannot change execution settings.",
+        });
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -726,11 +767,16 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.interaction-mode.set": {
-      yield* requireThread({
+      const analysisThread = yield* requireThread({
         readModel,
         command,
         threadId: command.threadId,
       });
+      if (analysisThread.analysis)
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "Analysis transcripts cannot change execution settings.",
+        });
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -754,6 +800,17 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      if (
+        targetThread.analysis &&
+        (targetThread.analysis.status !== "running" ||
+          targetThread.messages.some((message) => message.role === "user") ||
+          command.commandId !== `codebase-start-${targetThread.id}`)
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "Analysis transcripts are read-only. Start a new pass from Codebase.",
+        });
+      }
       const sourceProposedPlan = command.sourceProposedPlan;
       const sourceThread = sourceProposedPlan
         ? yield* requireThread({

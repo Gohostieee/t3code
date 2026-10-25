@@ -1,3 +1,4 @@
+import { CodebaseLink } from "../codebase/CodebaseRouteScreen";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import {
   StackActions,
@@ -743,6 +744,13 @@ function ThreadRouteContent(
   const serverConfig = routeEnvironmentRuntime?.serverConfig ?? null;
   const renderThreadRouteBody = (showActionControls: boolean) => (
     <>
+      <CodebaseLink
+        params={{
+          environmentId: selectedThread.environmentId,
+          projectId: selectedThread.projectId,
+          threadId: selectedThread.id,
+        }}
+      />
       <ThreadGitControls {...threadGitControlProps} showActionControls={showActionControls} />
 
       <GitActionProgressOverlay progress={gitActionProgress} onDismiss={dismissGitActionResult} />

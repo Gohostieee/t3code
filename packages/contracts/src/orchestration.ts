@@ -22,6 +22,7 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
+import { CodebaseAnalysis } from "./codebase.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -350,6 +351,7 @@ export const ThreadTitleRegeneration = Schema.Struct({
 export type ThreadTitleRegeneration = typeof ThreadTitleRegeneration.Type;
 
 export const OrchestrationThread = Schema.Struct({
+  analysis: Schema.optional(Schema.NullOr(CodebaseAnalysis)),
   id: ThreadId,
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
@@ -408,6 +410,7 @@ export const OrchestrationProjectShell = Schema.Struct({
 export type OrchestrationProjectShell = typeof OrchestrationProjectShell.Type;
 
 export const OrchestrationThreadShell = Schema.Struct({
+  analysis: Schema.optional(Schema.NullOr(CodebaseAnalysis)),
   id: ThreadId,
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
@@ -552,6 +555,7 @@ const ProjectDeleteCommand = Schema.Struct({
 });
 
 const ThreadCreateCommand = Schema.Struct({
+  analysis: Schema.optional(CodebaseAnalysis),
   type: Schema.Literal("thread.create"),
   commandId: CommandId,
   threadId: ThreadId,
@@ -886,6 +890,12 @@ const ThreadTitleRegenerationCompleteCommand = Schema.Struct({
 });
 
 const InternalOrchestrationCommand = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("thread.analysis.set"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    analysis: CodebaseAnalysis,
+  }),
   ThreadSessionSetCommand,
   ThreadMessageAssistantDeltaCommand,
   ThreadMessageAssistantCompleteCommand,
@@ -904,6 +914,7 @@ export const OrchestrationCommand = Schema.Union([
 export type OrchestrationCommand = typeof OrchestrationCommand.Type;
 
 export const OrchestrationEventType = Schema.Literals([
+  "thread.analysis-set",
   "project.created",
   "project.meta-updated",
   "project.deleted",
@@ -964,6 +975,7 @@ export const ProjectDeletedPayload = Schema.Struct({
 });
 
 export const ThreadCreatedPayload = Schema.Struct({
+  analysis: Schema.optional(CodebaseAnalysis),
   threadId: ThreadId,
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
@@ -1162,6 +1174,11 @@ const EventBaseFields = {
 } as const;
 
 export const OrchestrationEvent = Schema.Union([
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.analysis-set"),
+    payload: Schema.Struct({ threadId: ThreadId, analysis: CodebaseAnalysis }),
+  }),
   Schema.Struct({
     ...EventBaseFields,
     type: Schema.Literal("project.created"),

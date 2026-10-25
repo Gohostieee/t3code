@@ -1,3 +1,4 @@
+import { CodebaseNavigationButton } from "./codebase/CodebaseNavigationButton";
 import { autoAnimate } from "@formkit/auto-animate";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -2587,6 +2588,7 @@ export default function SidebarV2() {
         className="gap-0"
         fixedHeader={
           <SidebarGroup className="gap-1 p-[var(--sidebar-content-inset)]">
+            <CodebaseNavigationButton />
             <div className="flex items-center gap-1">
               <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground">
                 <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />

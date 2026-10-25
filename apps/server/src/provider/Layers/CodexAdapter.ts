@@ -1407,6 +1407,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             ? { resumeCursor: input.resumeCursor }
             : {}),
           runtimeMode: input.runtimeMode,
+          inspectionOnly: input.inspectionOnly ?? false,
           ...(input.modelSelection?.instanceId === boundInstanceId
             ? { model: input.modelSelection.model }
             : {}),
@@ -1702,6 +1703,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
   return {
     provider: PROVIDER,
     capabilities: {
+      codebaseAnalysis: true,
       sessionModelSwitch: "in-session",
     },
     startSession,

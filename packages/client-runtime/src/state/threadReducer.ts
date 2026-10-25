@@ -150,6 +150,8 @@ export function applyThreadDetailEvent(
       };
 
     // ── Thread metadata ─────────────────────────────────────────────
+    case "thread.analysis-set":
+      return { kind: "updated", thread: { ...thread, analysis: event.payload.analysis } };
     case "thread.meta-updated":
       return {
         kind: "updated",

@@ -1,3 +1,4 @@
+import { CodebaseLink } from "../codebase/CodebaseRouteScreen";
 import { isLiquidGlassSupported, LiquidGlassView } from "@callstack/liquid-glass";
 import type {
   EnvironmentProject,
@@ -1296,6 +1297,7 @@ function ThreadNavigationSidebarPane(
                 icon={filterIcon}
               />
             </ControlPillMenu>
+            <CodebaseLink />
             <SidebarHeaderActions grouped onOpenSettings={props.onOpenSettings} />
           </SidebarHeaderButtonGroup>
         </View>

@@ -94,6 +94,7 @@ type CodexThreadItem =
   | EffectCodexSchema.V2ThreadRollbackResponse["thread"]["turns"][number]["items"][number];
 
 export interface CodexSessionRuntimeOptions {
+  readonly inspectionOnly?: boolean;
   readonly threadId: ThreadId;
   readonly providerInstanceId?: ProviderInstanceId;
   readonly binaryPath: string;
@@ -297,7 +298,9 @@ function runtimeModeToThreadConfig(input: RuntimeMode): {
   }
 }
 
-function buildThreadStartParams(input: {
+export function buildThreadStartParams(input: {
+  readonly inspectionOnly?: boolean;
+  readonly inspectionMcpServers?: ReadonlyArray<string>;
   readonly cwd: string;
   readonly runtimeMode: RuntimeMode;
   readonly model: string | undefined;
@@ -306,8 +309,26 @@ function buildThreadStartParams(input: {
   const config = runtimeModeToThreadConfig(input.runtimeMode);
   return {
     cwd: input.cwd,
-    approvalPolicy: config.approvalPolicy,
-    sandbox: config.sandbox,
+    approvalPolicy: input.inspectionOnly ? "never" : config.approvalPolicy,
+    sandbox: input.inspectionOnly ? "read-only" : config.sandbox,
+    ...(input.inspectionOnly
+      ? {
+          config: {
+            "features.shell_tool": false,
+            "features.unified_exec": false,
+            ...Object.fromEntries(
+              (input.inspectionMcpServers ?? []).map((name) => [
+                `mcp_servers.${name}.enabled`,
+                false,
+              ]),
+            ),
+            "features.apps": false,
+            "features.multi_agent": false,
+            "apps._default.enabled": false,
+            web_search: "disabled",
+          },
+        }
+      : {}),
     approvalsReviewer: config.approvalsReviewer,
     ...(input.model ? { model: input.model } : {}),
     ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
@@ -359,6 +380,7 @@ function buildCodexCollaborationMode(input: {
 }
 
 export function buildTurnStartParams(input: {
+  readonly inspectionOnly?: boolean;
   readonly threadId: string;
   readonly runtimeMode: RuntimeMode;
   readonly prompt?: string;
@@ -395,9 +417,11 @@ export function buildTurnStartParams(input: {
   return decodeCodexTurnStartParamsWithCollaborationMode({
     threadId: input.threadId,
     input: turnInput,
-    approvalPolicy: config.approvalPolicy,
+    approvalPolicy: input.inspectionOnly ? "never" : config.approvalPolicy,
     approvalsReviewer: config.approvalsReviewer,
-    sandboxPolicy: runtimeModeToTurnSandboxPolicy(input.runtimeMode),
+    sandboxPolicy: input.inspectionOnly
+      ? { type: "readOnly" }
+      : runtimeModeToTurnSandboxPolicy(input.runtimeMode),
     ...(input.model ? { model: input.model } : {}),
     ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
@@ -455,6 +479,8 @@ interface CodexThreadOpenClient {
 }
 
 export const openCodexThread = (input: {
+  readonly inspectionOnly?: boolean;
+  readonly inspectionMcpServers?: ReadonlyArray<string>;
   readonly client: CodexThreadOpenClient;
   readonly threadId: ThreadId;
   readonly runtimeMode: RuntimeMode;
@@ -467,6 +493,8 @@ export const openCodexThread = (input: {
   const startParams = buildThreadStartParams({
     cwd: input.cwd,
     runtimeMode: input.runtimeMode,
+    inspectionOnly: input.inspectionOnly ?? false,
+    inspectionMcpServers: input.inspectionMcpServers ?? [],
     model: input.requestedModel,
     serviceTier: input.serviceTier,
   });
@@ -1219,7 +1247,19 @@ export const makeCodexSessionRuntime = (
 
       const requestedModel = normalizeCodexModelSlug(options.model);
 
+      const inspectionMcpServers: string[] = [];
+      if (options.inspectionOnly) {
+        const effective = yield* client.request("config/read", {
+          cwd: options.cwd,
+          includeLayers: false,
+        });
+        const servers = effective.config.mcp_servers;
+        if (typeof servers === "object" && servers !== null && !Array.isArray(servers))
+          inspectionMcpServers.push(...Object.keys(servers));
+      }
       const opened = yield* openCodexThread({
+        inspectionMcpServers,
+        inspectionOnly: options.inspectionOnly ?? false,
         client,
         threadId: options.threadId,
         runtimeMode: options.runtimeMode,
@@ -1293,6 +1333,7 @@ export const makeCodexSessionRuntime = (
             input.model ?? (yield* Ref.get(sessionRef)).model,
           );
           const params = yield* buildTurnStartParams({
+            inspectionOnly: options.inspectionOnly ?? false,
             threadId: providerThreadId,
             runtimeMode: options.runtimeMode,
             ...(input.input ? { prompt: input.input } : {}),

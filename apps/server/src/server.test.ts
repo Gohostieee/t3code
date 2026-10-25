@@ -1,3 +1,4 @@
+import { CodebaseService } from "./codebase/CodebaseService.ts";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -329,6 +330,7 @@ const buildAppUnderTest = (options?: {
   config?: Partial<ServerConfig.ServerConfig["Service"]>;
   layers?: {
     keybindings?: Partial<Keybindings.Keybindings["Service"]>;
+    codebase?: Partial<CodebaseService["Service"]>;
     providerRegistry?: Partial<ProviderRegistry.ProviderRegistry["Service"]>;
     serverSettings?: Partial<ServerSettings.ServerSettingsService["Service"]>;
     externalLauncher?: Partial<ExternalLauncher.ExternalLauncher["Service"]>;
@@ -703,13 +705,20 @@ const buildAppUnderTest = (options?: {
         ),
       ),
       Layer.provide(
-        Layer.mock(OrchestrationEngine.OrchestrationEngineService)({
-          readEvents: () => Stream.empty,
-          dispatch: () => Effect.succeed({ sequence: 0 }),
-          streamDomainEvents: Stream.empty,
-          latestSequence: Effect.succeed(0),
-          ...options?.layers?.orchestrationEngine,
-        }),
+        Layer.mergeAll(
+          Layer.mock(CodebaseService)({
+            start: () => Effect.void,
+            drain: Effect.void,
+            ...options?.layers?.codebase,
+          }),
+          Layer.mock(OrchestrationEngine.OrchestrationEngineService)({
+            readEvents: () => Stream.empty,
+            dispatch: () => Effect.succeed({ sequence: 0 }),
+            streamDomainEvents: Stream.empty,
+            latestSequence: Effect.succeed(0),
+            ...options?.layers?.orchestrationEngine,
+          }),
+        ),
       ),
       Layer.provide(
         Layer.mock(ProjectionSnapshotQuery.ProjectionSnapshotQuery)({
@@ -7502,6 +7511,50 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       );
 
       assertFailure(result, terminalError);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+  it.effect("routes checkout-scoped codebase reads and status over authenticated RPC", () =>
+    Effect.gen(function* () {
+      const projectId = ProjectId.make("codebase-project");
+      const checkout = "/workspace/codebase";
+      yield* buildAppUnderTest({
+        layers: {
+          codebase: {
+            read: (input) => {
+              assert.equal(input.projectId, projectId);
+              assert.equal(input.scopeId, "overview");
+              return Effect.succeed({
+                checkout,
+                branch: "main",
+                head: "abc",
+                state: "unbuilt",
+                freshness: "unknown",
+                revision: null,
+                configurationRevision: null,
+                manifest: null,
+                scope: null,
+                detail: null,
+                ignored: false,
+              });
+            },
+            status: (input) => {
+              assert.equal(input.projectId, projectId);
+              return Effect.succeed({ checkout, runs: [], artifactsChanged: false });
+            },
+          },
+        },
+      });
+      const url = yield* getWsServerUrl("/ws");
+      const map = yield* Effect.scoped(
+        withWsRpcClient(url, (client) =>
+          client[WS_METHODS.codebaseRead]({ projectId, scopeId: "overview" }),
+        ),
+      );
+      assert.equal(map.checkout, checkout);
+      const progress = yield* Effect.scoped(
+        withWsRpcClient(url, (client) => client[WS_METHODS.codebaseStatus]({ projectId })),
+      );
+      assert.equal(progress.runs.length, 0);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 });

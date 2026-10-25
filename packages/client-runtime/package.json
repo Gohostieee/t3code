@@ -138,6 +138,10 @@
     "./state/vcs": {
       "types": "./src/state/vcs.ts",
       "default": "./src/state/vcs.ts"
+    },
+    "./state/codebase": {
+      "types": "./src/state/codebase.ts",
+      "default": "./src/state/codebase.ts"
     }
   },
   "scripts": {

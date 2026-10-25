@@ -1,3 +1,4 @@
+import { CodebaseLink } from "../codebase/CodebaseRouteScreen";
 import { useAuth, useUser } from "@clerk/expo";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import Constants from "expo-constants";
@@ -538,6 +539,7 @@ function GeneralSettingsSection() {
 
   return (
     <SettingsSection title="General">
+      <CodebaseLink />
       <SettingsSwitchRow
         icon="folder"
         label="Project Grouping"

@@ -1,3 +1,5 @@
+import Migration0037 from "./Migrations/037_CodebaseAnalyzerBindings.ts";
+import Migration0036 from "./Migrations/036_CodebaseAnalysis.ts";
 /**
  * MigrationsLive - Migration runner with inline loader
  *
@@ -95,6 +97,8 @@ export const migrationEntries = [
   [33, "ProjectionThreadsSettled", Migration0033],
   [34, "ProjectionThreadsSnoozed", Migration0034],
   [35, "ProjectionThreadTitleRegeneration", Migration0035],
+  [36, "CodebaseAnalysis", Migration0036],
+  [37, "CodebaseAnalyzerBindings", Migration0037],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>

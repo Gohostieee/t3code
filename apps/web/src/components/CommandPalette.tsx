@@ -1,4 +1,5 @@
-"use client";
+import { codebaseNavigation } from "../lib/codebaseNavigation";
+("use client");
 
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { canCreateProjectInEnvironment } from "@t3tools/client-runtime/operations/projects";
@@ -1474,6 +1475,22 @@ function OpenCommandPaletteDialog(props: {
       await navigate({ to: "/settings" });
     },
   });
+
+  const codebaseSearch = codebaseNavigation({ activeThread, activeDraftThread, defaultProjectRef });
+  if (codebaseSearch)
+    actionItems.push({
+      kind: "action",
+      value: "action:codebase",
+      title: "Explore codebase",
+      searchTerms: ["codebase", "architecture", "map"],
+      icon: <FileSearchIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await navigate({
+          to: "/codebase",
+          search: codebaseSearch,
+        });
+      },
+    });
 
   const rootGroups = buildRootGroups({ actionItems, recentThreadItems });
   const sourceSelectionViewValue =

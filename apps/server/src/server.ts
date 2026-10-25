@@ -1,3 +1,5 @@
+import { CodebaseService } from "./codebase/CodebaseService.ts";
+import { CodebaseArtifactStore } from "./codebase/CodebaseArtifactStore.ts";
 import { EnvironmentHttpApi } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -338,7 +340,10 @@ const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
   Layer.provideMerge(OrchestrationLayerLive),
 );
 
-const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
+const RuntimeCoreDependenciesLive = Layer.mergeAll(
+  ReactorLayerLive,
+  CodebaseService.layer.pipe(Layer.provide(CodebaseArtifactStore.layer)),
+).pipe(
   // Core Services
   Layer.provideMerge(ServerSettingsLayerLive),
   Layer.provideMerge(CheckpointingLayerLive),

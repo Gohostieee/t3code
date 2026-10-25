@@ -282,6 +282,7 @@ export function projectEvent(
             projectId: payload.projectId,
             title: payload.title,
             modelSelection: payload.modelSelection,
+            analysis: payload.analysis ?? null,
             runtimeMode: payload.runtimeMode,
             interactionMode: payload.interactionMode,
             branch: payload.branch,
@@ -310,6 +311,15 @@ export function projectEvent(
             ? nextBase.threads.map((entry) => (entry.id === thread.id ? thread : entry))
             : [...nextBase.threads, thread],
         };
+      });
+
+    case "thread.analysis-set":
+      return Effect.succeed({
+        ...nextBase,
+        threads: updateThread(nextBase.threads, event.payload.threadId, {
+          analysis: event.payload.analysis,
+          updatedAt: event.payload.analysis.updatedAt,
+        }),
       });
 
     case "thread.deleted":

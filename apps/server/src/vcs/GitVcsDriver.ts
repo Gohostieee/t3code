@@ -1,3 +1,4 @@
+import { withCheckoutLock } from "./CheckoutLock.ts";
 import * as NodeCrypto from "node:crypto";
 
 import * as Context from "effect/Context";
@@ -747,27 +748,49 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         return false;
       }
 
-      yield* execute({
+      const gitDirectory = (yield* execute({
         operation,
         cwd: input.cwd,
-        args: ["restore", "--source", commitOid, "--worktree", "--staged", "--", "."],
-      });
-      yield* execute({
-        operation,
-        cwd: input.cwd,
-        args: ["clean", "-fd", "--", "."],
-      });
+        args: ["rev-parse", "--absolute-git-dir"],
+      })).stdout.trim();
+      return yield* withCheckoutLock(
+        gitDirectory,
+        Effect.gen(function* () {
+          yield* execute({
+            operation,
+            cwd: input.cwd,
+            args: ["restore", "--source", commitOid, "--worktree", "--staged", "--", "."],
+          });
+          yield* execute({
+            operation,
+            cwd: input.cwd,
+            args: ["clean", "-fd", "--", "."],
+          });
 
-      const headExists = yield* hasHeadCommit(input.cwd);
-      if (headExists) {
-        yield* execute({
-          operation,
-          cwd: input.cwd,
-          args: ["reset", "--quiet", "--", "."],
-        });
-      }
+          const headExists = yield* hasHeadCommit(input.cwd);
+          if (headExists) {
+            yield* execute({
+              operation,
+              cwd: input.cwd,
+              args: ["reset", "--quiet", "--", "."],
+            });
+          }
 
-      return true;
+          return true;
+        }),
+      ).pipe(
+        Effect.catchTag("CheckoutLockError", (cause) =>
+          Effect.fail(
+            new VcsProcessExitError({
+              operation,
+              command: "git restore",
+              cwd: input.cwd,
+              exitCode: 1,
+              detail: cause.message,
+            }),
+          ),
+        ),
+      );
     }),
 
     diffCheckpoints: Effect.fn("GitVcsDriver.checkpoints.diffCheckpoints")(function* (input) {

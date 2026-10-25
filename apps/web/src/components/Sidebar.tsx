@@ -1,3 +1,4 @@
+import { CodebaseNavigationButton } from "./codebase/CodebaseNavigationButton";
 import {
   ArchiveIcon,
   ArrowUpDownIcon,
@@ -2826,6 +2827,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
       className="gap-0"
       fixedHeader={
         <SidebarGroup className="px-2 pt-2 pb-1">
+          <CodebaseNavigationButton />
           <SidebarMenu>
             <SidebarMenuItem>
               <CommandDialogTrigger

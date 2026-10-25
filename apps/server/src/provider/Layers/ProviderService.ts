@@ -123,11 +123,13 @@ function toRuntimePayloadFromSession(
   session: ProviderSession,
   extra?: {
     readonly modelSelection?: unknown;
+    readonly inspectionOnly?: boolean;
     readonly lastRuntimeEvent?: string;
     readonly lastRuntimeEventAt?: string;
   },
 ): Record<string, unknown> {
   return {
+    ...(extra?.inspectionOnly !== undefined ? { inspectionOnly: extra.inspectionOnly } : {}),
     cwd: session.cwd ?? null,
     model: session.model ?? null,
     activeTurnId: session.activeTurnId ?? null,
@@ -148,6 +150,15 @@ function readPersistedModelSelection(
   }
   const raw = "modelSelection" in runtimePayload ? runtimePayload.modelSelection : undefined;
   return isModelSelection(raw) ? raw : undefined;
+}
+
+function isPersistedInspection(runtimePayload: unknown): boolean {
+  return (
+    typeof runtimePayload === "object" &&
+    runtimePayload !== null &&
+    "inspectionOnly" in runtimePayload &&
+    runtimePayload.inspectionOnly === true
+  );
 }
 
 function readPersistedCwd(
@@ -261,6 +272,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     threadId: ThreadId,
     extra?: {
       readonly modelSelection?: unknown;
+      readonly inspectionOnly?: boolean;
       readonly lastRuntimeEvent?: string;
       readonly lastRuntimeEventAt?: string;
     },
@@ -397,10 +409,19 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       const persistedCwd = readPersistedCwd(input.binding.runtimePayload);
       const persistedModelSelection = readPersistedModelSelection(input.binding.runtimePayload);
 
-      yield* prepareMcpSession(input.binding.threadId, bindingInstanceId);
+      const inspectionOnly = isPersistedInspection(input.binding.runtimePayload);
+      if (inspectionOnly) {
+        if (!adapter.capabilities.codebaseAnalysis)
+          return yield* toValidationError(
+            input.operation,
+            "This adapter cannot recover an inspection session.",
+          );
+        yield* clearMcpSession(input.binding.threadId);
+      } else yield* prepareMcpSession(input.binding.threadId, bindingInstanceId);
       const resumed = yield* adapter
         .startSession({
           threadId: input.binding.threadId,
+          inspectionOnly,
           provider: input.binding.provider,
           providerInstanceId: bindingInstanceId,
           ...(persistedCwd ? { cwd: persistedCwd } : {}),
@@ -590,10 +611,20 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "provider.cwd.effective": effectiveCwd ?? "",
         });
         const adapter = yield* registry.getByInstance(resolvedInstanceId);
-        yield* prepareMcpSession(threadId, resolvedInstanceId);
+        const inspectionOnly =
+          input.inspectionOnly === true || isPersistedInspection(persistedBinding?.runtimePayload);
+        if (inspectionOnly) {
+          if (!adapter.capabilities.codebaseAnalysis)
+            return yield* toValidationError(
+              "ProviderService.startSession",
+              "This provider cannot enforce codebase inspection permissions.",
+            );
+          yield* clearMcpSession(threadId);
+        } else yield* prepareMcpSession(threadId, resolvedInstanceId);
         const session = yield* adapter
           .startSession({
             ...input,
+            inspectionOnly,
             providerInstanceId: resolvedInstanceId,
             ...(effectiveCwd !== undefined ? { cwd: effectiveCwd } : {}),
             ...(effectiveResumeCursor !== undefined ? { resumeCursor: effectiveResumeCursor } : {}),
@@ -618,6 +649,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         });
         yield* upsertSessionBinding(sessionWithInstance, threadId, {
           modelSelection: input.modelSelection,
+          inspectionOnly,
         });
         yield* analytics.record("provider.session.started", {
           provider: sessionWithInstance.provider,

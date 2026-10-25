@@ -15,6 +15,7 @@ import {
 } from "../CodexDeveloperInstructions.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import {
+  buildThreadStartParams,
   buildTurnStartParams,
   hasConfiguredMcpServer,
   isRecoverableThreadResumeError,
@@ -469,3 +470,31 @@ describe("openCodexThread", () => {
     }),
   );
 });
+
+it.effect(
+  "keeps codebase inspection read-only and disables inherited execution and MCP tools",
+  () =>
+    Effect.gen(function* () {
+      const session = buildThreadStartParams({
+        inspectionOnly: true,
+        inspectionMcpServers: ["inherited-tool"],
+        cwd: "/project",
+        runtimeMode: "full-access",
+        model: undefined,
+        serviceTier: undefined,
+      });
+      NodeAssert.equal(session.sandbox, "read-only");
+      NodeAssert.equal(session.approvalPolicy, "never");
+      NodeAssert.equal(session.config?.["mcp_servers.inherited-tool.enabled"], false);
+      NodeAssert.equal(session.config?.["features.shell_tool"], false);
+      NodeAssert.equal(session.config?.["features.apps"], false);
+      const turn = yield* buildTurnStartParams({
+        inspectionOnly: true,
+        threadId: "analysis",
+        runtimeMode: "full-access",
+        prompt: "Inspect source",
+      });
+      NodeAssert.deepEqual(turn.sandboxPolicy, { type: "readOnly" });
+      NodeAssert.equal(turn.approvalPolicy, "never");
+    }),
+);

@@ -1,5 +1,11 @@
 # Glossary
 
+## Codebase exploration
+
+- **Scope**: one bounded architecture view with nodes, relationships, source evidence, and references to deeper scopes.
+- **Pass**: one explicitly requested analyzer turn for a scope, using a frozen checkout/input binding and model selection.
+- **Accepted map**: a validated scope document atomically saved in the project's `.t3-codebase` directory. Provider output and checkpoint completion alone do not constitute acceptance.
+
 > For maintainers. Using T3 Code? See [docs/user](../user/).
 
 This is a living glossary for T3 Code. It explains what common terms mean in this codebase.

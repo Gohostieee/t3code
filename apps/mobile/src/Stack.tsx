@@ -1,3 +1,4 @@
+import { CodebaseRouteScreen } from "./features/codebase/CodebaseRouteScreen";
 import {
   createPathConfigForStaticNavigation,
   getPathFromState,
@@ -395,6 +396,11 @@ export const RootStack = createNativeStackNavigator({
         headerBackVisible: false,
         ...getCompactBrandHeaderOptions(),
       },
+    }),
+    Codebase: createNativeStackScreen({
+      screen: CodebaseRouteScreen,
+      linking: "codebase",
+      options: { ...SOLID_HEADER_OPTIONS, title: "Codebase" },
     }),
     Thread: createNativeStackScreen({
       screen: ThreadRouteScreen,

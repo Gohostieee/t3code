@@ -52,6 +52,7 @@ export type LegacyProviderRuntimeEvent = FixtureProviderRuntimeEvent;
 
 interface SessionState {
   readonly session: ProviderSession;
+  readonly inspectionOnly: boolean;
   snapshot: ProviderThreadSnapshot;
   turnCount: number;
   readonly queuedResponses: Array<TestTurnResponse>;
@@ -284,6 +285,7 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
         };
 
         sessions.set(threadId, {
+          inspectionOnly: input.inspectionOnly === true,
           session,
           snapshot: {
             threadId,
@@ -306,7 +308,9 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
 
         state.turnCount += 1;
         const turnCount = state.turnCount;
-        const turnId = TurnId.make(`turn-${turnCount}`);
+        const turnId = TurnId.make(
+          state.inspectionOnly ? `${input.threadId}-turn-${turnCount}` : `turn-${turnCount}`,
+        );
 
         const response = state.queuedResponses.shift();
         if (!response) {
@@ -492,6 +496,7 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
       provider,
       capabilities: {
         sessionModelSwitch: "in-session",
+        codebaseAnalysis: true,
       },
       startSession,
       sendTurn,

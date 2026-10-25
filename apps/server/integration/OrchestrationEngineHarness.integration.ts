@@ -1,9 +1,15 @@
+import { CodebaseService } from "../src/codebase/CodebaseService.ts";
+import { CodebaseArtifactStore } from "../src/codebase/CodebaseArtifactStore.ts";
+import * as ProcessRunner from "../src/processRunner.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeChildProcess from "node:child_process";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   ApprovalRequestId,
+  defaultInstanceIdForDriver,
+  DEFAULT_MODEL_BY_PROVIDER,
+  DEFAULT_MODEL,
   CodexSettings,
   ProviderDriverKind,
   type OrchestrationEvent,
@@ -172,6 +178,7 @@ const tryRuntimePromise = <A>(operation: string, run: () => Promise<A>) =>
   });
 
 export interface OrchestrationIntegrationHarness {
+  readonly codebase: CodebaseService["Service"];
   readonly rootDir: string;
   readonly workspaceDir: string;
   readonly dbPath: string;
@@ -293,7 +300,28 @@ export const makeOrchestrationIntegrationHarness = (
           Layer.provide(AnalyticsService.layerTest),
           Layer.provide(providerEventLoggersLayer),
         );
-    const providerRegistryLayer = makeProviderRegistryLayer();
+    const providerRegistryLayer = makeProviderRegistryLayer([
+      {
+        instanceId: defaultInstanceIdForDriver(provider),
+        driver: provider,
+        enabled: true,
+        installed: true,
+        version: null,
+        status: "ready",
+        auth: { status: "authenticated" },
+        checkedAt: "2026-01-01T00:00:00.000Z",
+        models: [
+          {
+            slug: DEFAULT_MODEL_BY_PROVIDER[provider] ?? DEFAULT_MODEL,
+            name: "Test model",
+            isCustom: false,
+            capabilities: null,
+          },
+        ],
+        slashCommands: [],
+        skills: [],
+      },
+    ]);
 
     const checkpointStoreLayer = CheckpointStore.layer.pipe(Layer.provide(VcsDriverRegistry.layer));
     const projectionSnapshotQueryLayer = OrchestrationProjectionSnapshotQueryLive;
@@ -374,6 +402,9 @@ export const makeOrchestrationIntegrationHarness = (
       ),
     );
     const layer = Layer.empty.pipe(
+      Layer.provideMerge(CodebaseService.layer.pipe(Layer.provide(CodebaseArtifactStore.layer))),
+      Layer.provideMerge(VcsProcess.layer),
+      Layer.provideMerge(ProcessRunner.layer),
       Layer.provideMerge(runtimeServicesLayer),
       Layer.provideMerge(orchestrationReactorLayer),
       Layer.provideMerge(providerRegistryLayer),
@@ -412,9 +443,15 @@ export const makeOrchestrationIntegrationHarness = (
       runtime.runPromise(Effect.service(RuntimeReceiptBus)),
     ).pipe(Effect.orDie);
 
+    const codebase = yield* tryRuntimePromise("load CodebaseService", () =>
+      runtime.runPromise(Effect.service(CodebaseService)),
+    ).pipe(Effect.orDie);
     const scope = yield* Scope.make("sequential");
     yield* tryRuntimePromise("start OrchestrationReactor", () =>
       runtime.runPromise(reactor.start().pipe(Scope.provide(scope))),
+    ).pipe(Effect.orDie);
+    yield* tryRuntimePromise("start CodebaseService", () =>
+      runtime.runPromise(codebase.start().pipe(Scope.provide(scope))),
     ).pipe(Effect.orDie);
     const receiptHistory = yield* Ref.make<ReadonlyArray<OrchestrationRuntimeReceipt>>([]);
     yield* Stream.runForEach(runtimeReceiptBus.streamEventsForTest, (receipt) =>
@@ -541,6 +578,7 @@ export const makeOrchestrationIntegrationHarness = (
     });
 
     return {
+      codebase,
       rootDir,
       workspaceDir,
       dbPath,

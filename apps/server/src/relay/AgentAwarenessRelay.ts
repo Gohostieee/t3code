@@ -239,7 +239,7 @@ export function resolveAgentAwarenessRelayPublishSnapshot(input: {
   readonly state: RelayAgentActivityState | null;
   readonly reason: "snapshot" | "thread-not-found" | "project-not-found";
 } {
-  if (Option.isNone(input.thread)) {
+  if (Option.isNone(input.thread) || input.thread.value.analysis) {
     return {
       projectId: null,
       state: null,
@@ -274,6 +274,7 @@ export function resolveAgentAwarenessRelayActiveThreadIds(input: {
   const projectById = new Map(input.projects.map((project) => [project.id, project]));
   return input.threads
     .filter((thread) => {
+      if (thread.analysis) return false;
       const project = projectById.get(thread.projectId);
       if (!project) {
         return false;

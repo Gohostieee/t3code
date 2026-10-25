@@ -1,3 +1,4 @@
+import { withCheckoutLock } from "./CheckoutLock.ts";
 import * as Arr from "effect/Array";
 import * as Cache from "effect/Cache";
 import * as Data from "effect/Data";
@@ -2808,10 +2809,28 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
               ? ["checkout", localTrackingBranch]
               : ["checkout", input.refName];
 
-      yield* executeGit("GitVcsDriver.switchRef.checkout", input.cwd, checkoutArgs, {
-        timeoutMs: 10_000,
-        fallbackErrorDetail: "git checkout failed",
-      });
+      const gitDirectory = (yield* runGitStdout("GitVcsDriver.switchRef.lockDirectory", input.cwd, [
+        "rev-parse",
+        "--absolute-git-dir",
+      ])).trim();
+      yield* withCheckoutLock(
+        gitDirectory,
+        executeGit("GitVcsDriver.switchRef.checkout", input.cwd, checkoutArgs, {
+          timeoutMs: 10_000,
+          fallbackErrorDetail: "git checkout failed",
+        }),
+      ).pipe(
+        Effect.mapError((cause) =>
+          cause._tag === "CheckoutLockError"
+            ? new GitCommandError({
+                operation: "GitVcsDriver.switchRef.checkout",
+                command: "git",
+                cwd: input.cwd,
+                detail: cause.message,
+              })
+            : cause,
+        ),
+      );
 
       const refName = yield* runGitStdout("GitVcsDriver.switchRef.currentBranch", input.cwd, [
         "branch",
@@ -2889,6 +2908,25 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       ),
     );
 
+  const coordinateCheckout = <A, R>(cwd: string, work: Effect.Effect<A, GitCommandError, R>) =>
+    Effect.gen(function* () {
+      const gitDirectory = (yield* runGitStdout("GitVcsDriver.checkoutLock", cwd, [
+        "rev-parse",
+        "--absolute-git-dir",
+      ])).trim();
+      return yield* withCheckoutLock(gitDirectory, work).pipe(
+        Effect.catchTag("CheckoutLockError", (cause) =>
+          Effect.fail(
+            new GitCommandError({
+              operation: "GitVcsDriver.checkoutLock",
+              command: "git",
+              cwd,
+              detail: cause.message,
+            }),
+          ),
+        ),
+      );
+    });
   return GitVcsDriver.GitVcsDriver.of({
     execute,
     status,
@@ -2900,7 +2938,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       withListRefsInvalidation(cwd, commit(cwd, subject, body, options)),
     pushCurrentBranch: (cwd, fallbackBranch, options) =>
       withListRefsInvalidation(cwd, pushCurrentBranch(cwd, fallbackBranch, options)),
-    pullCurrentBranch: (cwd) => withListRefsInvalidation(cwd, pullCurrentBranch(cwd)),
+    pullCurrentBranch: (cwd) =>
+      withListRefsInvalidation(cwd, coordinateCheckout(cwd, pullCurrentBranch(cwd))),
     readRangeContext,
     getReviewDiffPreview,
     readConfigValue,
@@ -2916,8 +2955,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     fetchRemoteTrackingBranch: (input) =>
       withListRefsInvalidation(input.cwd, fetchRemoteTrackingBranch(input)),
     setBranchUpstream: (input) => withListRefsInvalidation(input.cwd, setBranchUpstream(input)),
-    removeWorktree: (input) => withListRefsInvalidation(input.cwd, removeWorktree(input)),
-    renameBranch: (input) => withListRefsInvalidation(input.cwd, renameBranch(input)),
+    removeWorktree: (input) =>
+      withListRefsInvalidation(input.cwd, coordinateCheckout(input.path, removeWorktree(input))),
+    renameBranch: (input) =>
+      withListRefsInvalidation(input.cwd, coordinateCheckout(input.cwd, renameBranch(input))),
     createRef: (input) => withListRefsInvalidation(input.cwd, createRef(input)),
     switchRef: (input) => withListRefsInvalidation(input.cwd, switchRef(input)),
     initRepo: initRepoWithListRefsInvalidation,
