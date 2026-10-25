@@ -52,10 +52,12 @@ export function useRightPanelSurfaceClose(input: {
     }
     if (
       surface.kind === "terminal" &&
-      readEnvironmentScope(ref.environmentId, AuthTerminalOperateScope)
+      readEnvironmentScope(ref.environmentId, AuthTerminalOperateScope) &&
+      terminalActions.workspaceRef &&
+      surface.workspaceId === terminalActions.workspaceRef.workspaceId
     ) {
       for (const terminalId of surface.terminalIds) {
-        storeCloseTerminal(ref, terminalId);
+        storeCloseTerminal(terminalActions.workspaceRef, terminalId);
         terminalActions.closeTerminalSession(terminalId);
       }
     }

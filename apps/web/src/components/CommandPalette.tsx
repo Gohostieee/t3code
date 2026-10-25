@@ -1,3 +1,4 @@
+import { openProjectTerminal } from "../projectTerminalStore";
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 
@@ -142,7 +143,7 @@ import {
   isWindowsPlatform,
   newProjectId,
 } from "../lib/utils";
-import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import { useThreadTerminalUiState } from "../state/terminalWorkspace";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { useAvailableSettingsSearchItems } from "./settings/useAvailableSettingsSearchItems";
 import {
@@ -260,11 +261,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
   const composerHandleRef = useRef<ChatComposerHandle | null>(null);
   const routeTarget = useThreadRouteTarget();
   const routeThreadRef = routeTarget?.kind === "server" ? routeTarget.threadRef : null;
-  const terminalOpen = useTerminalUiStateStore((state) =>
-    routeThreadRef
-      ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
-      : false,
-  );
+  const terminalOpen = useThreadTerminalUiState(routeThreadRef).terminalOpen;
   const previewOpen = useRightPanelStore((state) =>
     routeThreadRef
       ? selectActiveRightPanel(state.byThreadKey, routeThreadRef) === "preview"
@@ -1634,6 +1631,20 @@ function OpenCommandPaletteDialog(props: {
           to: "/projects/$projectKey",
           params: { projectKey: contextualProjectGroup.projectKey },
         });
+      },
+    });
+  }
+
+  for (const project of pickerProjects) {
+    actionItems.push({
+      kind: "action",
+      value: `terminal:${project.environmentId}:${project.id}`,
+      title: `Project terminals: ${project.title}`,
+      description: project.workspaceRoot,
+      searchTerms: ["terminal", "shell", "checkout", project.title],
+      icon: <FolderIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        openProjectTerminal({ environmentId: project.environmentId, projectId: project.id });
       },
     });
   }

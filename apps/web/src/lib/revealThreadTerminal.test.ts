@@ -3,23 +3,26 @@ import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { beforeEach, expect, it } from "vite-plus/test";
 
 import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
-import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import { selectWorkspaceTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { revealThreadTerminal } from "./revealThreadTerminal";
 
 const threadRef = scopeThreadRef(EnvironmentId.make("local"), ThreadId.make("settled-thread"));
 const remoteRef = scopeThreadRef(EnvironmentId.make("remote"), threadRef.threadId);
 
+const workspaceRef = { environmentId: threadRef.environmentId, workspaceId: "workspace-1" };
+const remoteWorkspaceRef = { ...workspaceRef, environmentId: remoteRef.environmentId };
+
 beforeEach(() => {
   useTerminalUiStateStore.setState({
-    terminalUiStateByThreadKey: {},
-    suppressedTerminalIdsByThreadKey: {},
+    terminalUiStateByWorkspaceKey: {},
+    suppressedTerminalIdsByWorkspaceKey: {},
   });
   useRightPanelStore.setState({ byThreadKey: {} });
 });
 
 it("reopens the existing panel and selects a running terminal in its split", () => {
   const panels = useRightPanelStore.getState();
-  panels.openTerminal(threadRef, "terminal-1");
+  panels.openTerminal(threadRef, "terminal-1", workspaceRef.workspaceId);
   const surfaceId = selectThreadRightPanelState(
     useRightPanelStore.getState().byThreadKey,
     threadRef,
@@ -28,7 +31,7 @@ it("reopens the existing panel and selects a running terminal in its split", () 
   panels.activateTerminal(threadRef, surfaceId, "terminal-1");
   panels.close(threadRef);
 
-  revealThreadTerminal(threadRef, "setup-install");
+  revealThreadTerminal(threadRef, "setup-install", workspaceRef);
   expect(
     selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, threadRef),
   ).toMatchObject({
@@ -42,17 +45,19 @@ it("reopens the existing panel and selects a running terminal in its split", () 
     ],
   });
   expect(
-    selectThreadTerminalUiState(
-      useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
-      threadRef,
+    selectWorkspaceTerminalUiState(
+      useTerminalUiStateStore.getState().terminalUiStateByWorkspaceKey,
+      workspaceRef,
     ).terminalIds,
   ).toEqual([]);
 });
 
 it("reveals terminals in their own environment without changing another environment's drawer", () => {
-  revealThreadTerminal(threadRef, "default");
-  revealThreadTerminal(remoteRef, "setup-install");
-  const state = useTerminalUiStateStore.getState().terminalUiStateByThreadKey;
-  expect(selectThreadTerminalUiState(state, threadRef).terminalIds).toEqual(["default"]);
-  expect(selectThreadTerminalUiState(state, remoteRef).terminalIds).toEqual(["setup-install"]);
+  revealThreadTerminal(threadRef, "default", workspaceRef);
+  revealThreadTerminal(remoteRef, "setup-install", remoteWorkspaceRef);
+  const state = useTerminalUiStateStore.getState().terminalUiStateByWorkspaceKey;
+  expect(selectWorkspaceTerminalUiState(state, workspaceRef).terminalIds).toEqual(["default"]);
+  expect(selectWorkspaceTerminalUiState(state, remoteWorkspaceRef).terminalIds).toEqual([
+    "setup-install",
+  ]);
 });

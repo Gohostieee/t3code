@@ -179,6 +179,11 @@ const RPC_AGGREGATES = {
   [WS_METHODS.reviewGetDiffPreview]: "review",
   [WS_METHODS.reviewGetDiffFileContents]: "review",
   [WS_METHODS.terminalOpen]: "terminal",
+  [WS_METHODS.terminalLegacyHistory]: "terminal",
+  [WS_METHODS.terminalListWorkspaces]: "terminal",
+  [WS_METHODS.terminalResolveWorkspace]: "terminal",
+  [WS_METHODS.terminalRunTask]: "terminal",
+
   [WS_METHODS.terminalAttach]: "terminal",
   [WS_METHODS.terminalObserve]: "terminal",
   [WS_METHODS.terminalWrite]: "terminal",

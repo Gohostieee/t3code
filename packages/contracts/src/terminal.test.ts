@@ -41,7 +41,7 @@ describe("TerminalProviderEnvironmentError", () => {
 describe("TerminalOpenInput", () => {
   it("drops invalid env keys while retaining valid overrides", () => {
     const parsed = decodeSync(TerminalOpenInput, {
-      threadId: "thread-1",
+      workspaceId: "thread-1",
       terminalId: DEFAULT_TERMINAL_ID,
       cwd: "/tmp/project",
       env: { "bad-key": "1", GOOD_KEY: "2" },

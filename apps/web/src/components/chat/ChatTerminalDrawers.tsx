@@ -1,15 +1,12 @@
 import type { ResolvedKeybindingsConfig } from "@t3tools/contracts";
 import {
   parseScopedThreadKey,
-  scopedThreadKey,
-  scopeThreadRef,
+  scopedTerminalWorkspaceKey,
 } from "@t3tools/client-runtime/environment";
 import { useState } from "react";
-import { useShallow } from "zustand/react/shallow";
-import { useComposerDraftStore } from "../../composerDraftStore";
 import type { TerminalContextSelection } from "../../lib/terminalContext";
 import { usePanelAnimationSettings, usePanelPresence } from "../../panelAnimations";
-import { useThreadRefs } from "../../state/entities";
+import { useThreadTerminalWorkspace } from "../../state/terminalWorkspace";
 import { useTerminalUiStateStore } from "../../terminalUiStateStore";
 import {
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
@@ -41,38 +38,34 @@ interface ChatTerminalDrawersProps {
  */
 export function ChatTerminalDrawers(props: ChatTerminalDrawersProps) {
   const { activeThreadKey } = props;
-  const openTerminalThreadKeys = useTerminalUiStateStore(
-    useShallow((state) =>
-      Object.entries(state.terminalUiStateByThreadKey).flatMap(
-        ([nextThreadKey, nextTerminalUiState]) =>
-          nextTerminalUiState.terminalOpen ? [nextThreadKey] : [],
-      ),
-    ),
+  const activeThreadRef = activeThreadKey ? parseScopedThreadKey(activeThreadKey) : null;
+  const activeWorkspace = useThreadTerminalWorkspace(activeThreadRef);
+  const activeWorkspaceKey = activeWorkspace.ref
+    ? scopedTerminalWorkspaceKey(activeWorkspace.ref)
+    : null;
+  const openTerminalWorkspaces = useTerminalUiStateStore(
+    (state) => state.terminalUiStateByWorkspaceKey,
   );
-  const serverThreadRefs = useThreadRefs();
-  const serverThreadKeys = serverThreadRefs.map(scopedThreadKey);
-  const draftThreadsByThreadKey = useComposerDraftStore((store) => store.draftThreadsByThreadKey);
-  const draftThreadKeys = Object.values(draftThreadsByThreadKey).map((draftThread) =>
-    scopedThreadKey(scopeThreadRef(draftThread.environmentId, draftThread.threadId)),
-  );
+  const [threadRefsByWorkspace, setThreadRefsByWorkspace] = useState<
+    Record<string, NonNullable<typeof activeThreadRef>>
+  >({});
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
   const activeTerminalDrawerPresence = usePanelPresence(
-    Boolean(activeThreadKey && props.activeTerminalOpen),
+    Boolean(activeWorkspaceKey && props.activeTerminalOpen),
     true,
     panelAnimationsActive,
-    activeThreadKey,
+    activeWorkspaceKey,
     panelAnimationDurationMs,
   );
   const [mountedTerminalThreadKeys, setMountedTerminalThreadKeys] = useState<string[]>([]);
-  const existingOpenTerminalThreadKeys = (() => {
-    const existingThreadKeys = new Set<string>([...serverThreadKeys, ...draftThreadKeys]);
-    return openTerminalThreadKeys.filter((nextThreadKey) => existingThreadKeys.has(nextThreadKey));
-  })();
+  const existingOpenTerminalThreadKeys = Object.keys(threadRefsByWorkspace).filter(
+    (key) => openTerminalWorkspaces[key]?.terminalOpen,
+  );
   const reconciledMountedTerminalThreadKeys = reconcileMountedTerminalThreadIds({
     currentThreadIds: mountedTerminalThreadKeys,
     openThreadIds: existingOpenTerminalThreadKeys,
-    activeThreadId: activeThreadKey,
+    activeThreadId: activeWorkspaceKey,
     activeThreadTerminalOpen: activeTerminalDrawerPresence.present,
     maxHiddenThreadCount: MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
   });
@@ -84,8 +77,26 @@ export function ChatTerminalDrawers(props: ChatTerminalDrawersProps) {
   ) {
     setMountedTerminalThreadKeys(reconciledMountedTerminalThreadKeys);
   }
+  const nextThreadRefs = Object.fromEntries(
+    reconciledMountedTerminalThreadKeys.flatMap((key) => {
+      const ref = key === activeWorkspaceKey ? activeThreadRef : threadRefsByWorkspace[key];
+      return ref ? [[key, ref]] : [];
+    }),
+  );
+  if (
+    Object.keys(nextThreadRefs).length !== Object.keys(threadRefsByWorkspace).length ||
+    Object.entries(nextThreadRefs).some(
+      ([key, ref]) =>
+        ref.threadId !== threadRefsByWorkspace[key]?.threadId ||
+        ref.environmentId !== threadRefsByWorkspace[key]?.environmentId,
+    )
+  )
+    setThreadRefsByWorkspace(nextThreadRefs);
   const mountedTerminalThreadRefs = mountedTerminalThreadKeys.flatMap((mountedThreadKey) => {
-    const mountedThreadRef = parseScopedThreadKey(mountedThreadKey);
+    const mountedThreadRef =
+      mountedThreadKey === activeWorkspaceKey
+        ? activeThreadRef
+        : threadRefsByWorkspace[mountedThreadKey];
     return mountedThreadRef ? [{ key: mountedThreadKey, threadRef: mountedThreadRef }] : [];
   });
 
@@ -94,10 +105,10 @@ export function ChatTerminalDrawers(props: ChatTerminalDrawersProps) {
       key={mountedThreadKey}
       threadRef={mountedThreadRef}
       threadId={mountedThreadRef.threadId}
-      active={mountedThreadKey === activeThreadKey}
-      composerHeight={mountedThreadKey === activeThreadKey ? props.composerHeight : 0}
-      launchContext={mountedThreadKey === activeThreadKey ? props.launchContext : null}
-      focusRequestId={mountedThreadKey === activeThreadKey ? props.focusRequestId : 0}
+      active={mountedThreadKey === activeWorkspaceKey}
+      composerHeight={mountedThreadKey === activeWorkspaceKey ? props.composerHeight : 0}
+      launchContext={mountedThreadKey === activeWorkspaceKey ? props.launchContext : null}
+      focusRequestId={mountedThreadKey === activeWorkspaceKey ? props.focusRequestId : 0}
       splitShortcutLabel={props.splitShortcutLabel}
       splitVerticalShortcutLabel={props.splitVerticalShortcutLabel}
       newShortcutLabel={props.newShortcutLabel}

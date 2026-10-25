@@ -7,6 +7,8 @@ function terminalNumber(terminalId: string): string | undefined {
 }
 
 export function getTerminalLabel(terminalId: string): string {
+  if (terminalId.startsWith("task-")) return "Task";
+  if (/^[\da-f]{8}-[\da-f-]{27}$/i.test(terminalId)) return "Terminal";
   const numericSuffix = terminalNumber(terminalId);
   if (numericSuffix) {
     return `Terminal ${numericSuffix}`;

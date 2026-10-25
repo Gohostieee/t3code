@@ -99,8 +99,8 @@ function setup() {
   useClosedViewStore.setState({ entries: [] });
   useRightPanelStore.setState({ byThreadKey: {}, userActionRevisionByThreadKey: {} });
   useTerminalUiStateStore.setState({
-    terminalUiStateByThreadKey: {},
-    suppressedTerminalIdsByThreadKey: {},
+    terminalUiStateByWorkspaceKey: {},
+    suppressedTerminalIdsByWorkspaceKey: {},
   });
 }
 

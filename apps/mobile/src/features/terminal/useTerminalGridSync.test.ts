@@ -38,13 +38,18 @@ function session({
   readonly version?: number;
   readonly status?: Input["terminal"]["status"];
 } = {}): Input["terminal"] {
-  return { output: { ...EMPTY_TERMINAL_BUFFER_STATE.output, generation }, version, status };
+  return {
+    summary: null,
+    output: { ...EMPTY_TERMINAL_BUFFER_STATE.output, generation },
+    version,
+    status,
+  };
 }
 
 function input(): Input {
   return {
     environmentId: EnvironmentId.make("environment"),
-    threadId: ThreadId.make("thread"),
+    workspaceId: ThreadId.make("thread"),
     terminalId: "term-1",
     canOperate: true,
     terminal: session(),
@@ -98,7 +103,13 @@ it("replays an unchanged grid after reconnecting with a new attachment generatio
   expect(resize).toHaveBeenCalledTimes(2);
   expect(resize).toHaveBeenLastCalledWith({
     environmentId: "environment",
-    input: { threadId: "thread", terminalId: "term-1", cols: 120, rows: 40 },
+    input: {
+      generation: undefined,
+      workspaceId: "thread",
+      terminalId: "term-1",
+      cols: 120,
+      rows: 40,
+    },
   });
 
   // React may observe the next snapshot without rendering the empty seed first.

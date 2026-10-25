@@ -6,6 +6,7 @@ import {
   type ProjectId as ProjectIdType,
   type ScopedProjectRef,
   type ScopedThreadRef,
+  type ScopedTerminalWorkspaceRef,
 } from "@t3tools/contracts";
 
 export function scopeProjectRef(
@@ -33,6 +34,15 @@ export function scopedProjectKey(ref: ScopedProjectRef): string {
 
 export function scopedThreadKey(ref: ScopedThreadRef): string {
   return scopedRefKey(ref);
+}
+
+export function scopedTerminalWorkspaceKey(ref: ScopedTerminalWorkspaceRef): string {
+  return `${ref.environmentId}:${ref.workspaceId}`;
+}
+
+export function parseScopedTerminalWorkspaceKey(key: string): ScopedTerminalWorkspaceRef | null {
+  const parsed = parseScopedKey(key);
+  return parsed ? { environmentId: parsed.environmentId, workspaceId: parsed.localId } : null;
 }
 
 function parseScopedKey(key: string): { environmentId: EnvironmentIdType; localId: string } | null {

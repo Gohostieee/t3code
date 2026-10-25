@@ -334,7 +334,7 @@ describe("environment query lifecycle", () => {
         const receivedCheckout = yield* Deferred.make<void>();
         const receivedEmpty = yield* Deferred.make<void>();
         const checkout: TerminalSummary = {
-          threadId: "thread-1",
+          workspaceId: "thread-1",
           terminalId: "terminal-1",
           cwd: "/repo/root/packages/app",
           worktreePath: null,
@@ -401,7 +401,7 @@ describe("environment query lifecycle", () => {
       }),
   );
 
-  it.effect("terminal attach resubscribes with resume only after the stream replied", () =>
+  it.effect("terminal attach resubscribes without opening or restarting on reconnect", () =>
     Effect.gen(function* () {
       const harness = yield* makeEnvironmentQueryHarness(Effect.void);
       const inputs = yield* Queue.unbounded<TerminalAttachInput>();
@@ -417,7 +417,7 @@ describe("environment query lifecycle", () => {
       const firstSession = { ...QUERY_RPC_SESSION, client };
       yield* SubscriptionRef.set(harness.supervisorSession, Option.some(firstSession));
       const input = {
-        threadId: "thread-1",
+        workspaceId: "thread-1",
         terminalId: "terminal-1",
         cwd: "/tmp/project",
         restartIfNotRunning: true,
@@ -446,16 +446,16 @@ describe("environment query lifecycle", () => {
       expect(yield* Queue.take(inputs)).toEqual(input);
       yield* Queue.offer(events, {
         type: "closed",
-        threadId: input.threadId,
+        workspaceId: input.workspaceId,
         terminalId: input.terminalId,
       });
       yield* Deferred.await(received);
 
       yield* SubscriptionRef.set(harness.supervisorSession, Option.some({ ...firstSession }));
-      expect(yield* Queue.take(inputs)).toEqual({ ...input, resume: true });
+      expect(yield* Queue.take(inputs)).toEqual(input);
       // Catalog replacements rerun the same stream through followStream's switchMap.
       yield* SubscriptionRef.update(harness.streamGeneration, (generation) => generation + 1);
-      expect(yield* Queue.take(inputs)).toEqual({ ...input, resume: true });
+      expect(yield* Queue.take(inputs)).toEqual(input);
 
       unmount();
       registry.dispose();

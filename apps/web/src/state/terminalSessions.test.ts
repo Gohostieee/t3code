@@ -11,12 +11,12 @@ const threadA = ThreadId.make("thread-a");
 const threadB = ThreadId.make("thread-b");
 
 function summary(
-  threadId: string,
+  workspaceId: string,
   terminalId: string,
   changes: Partial<TerminalSummary> = {},
 ): TerminalSummary {
   return {
-    threadId,
+    workspaceId,
     terminalId,
     cwd: "/repo",
     worktreePath: null,

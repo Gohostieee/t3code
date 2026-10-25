@@ -21,6 +21,8 @@ export function TerminalContextSheet(props: {
   environmentId: EnvironmentId;
   threadId: ThreadId;
   terminalId: string;
+  workspaceId?: string;
+  cwd?: string;
   terminalLabel: string;
   onClose: () => void;
   onAttach: () => void;
@@ -38,6 +40,9 @@ export function TerminalContextSheet(props: {
       kind: "terminal" as const,
       contextId: ComposerContextId.make(uuidv4()),
       label: `${props.terminalLabel} · visible lines ${range.start + 1}–${range.end + 1}`,
+      environmentId: props.environmentId,
+      ...(props.workspaceId ? { workspaceId: props.workspaceId } : {}),
+      ...(props.cwd ? { cwd: props.cwd } : {}),
       terminalId: props.terminalId,
       terminalLabel: `${props.terminalLabel} (visible output)`,
       lineStart: range.start + 1,

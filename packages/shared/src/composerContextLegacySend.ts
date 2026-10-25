@@ -77,7 +77,10 @@ function renderTerminalEntry(record: ComposerContextRecord): string {
     .slice(0, record.lineEnd - record.lineStart + 1)
     .map((line, index) => `${record.lineStart + index} | ${line}`)
     .join("\n");
-  return `- ${record.terminalLabel} ${range}:\n${indent(body)}`;
+  const source = record.cwd
+    ? `Source: ${record.cwd} (checkout ${record.workspaceId ?? "unknown"}, environment ${record.environmentId ?? "unknown"})\n`
+    : "";
+  return `- ${record.terminalLabel} ${range}:\n${indent(source + body)}`;
 }
 
 function renderElementEntry(record: ComposerContextRecord): string {

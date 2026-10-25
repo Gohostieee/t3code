@@ -1,3 +1,4 @@
+import { ProjectTerminalRouteScreen } from "./features/terminal/ProjectTerminalRouteScreen";
 import { isDraftThreadRoute } from "./features/threads/thread-route-state";
 import { ComponentCatalogScreen } from "./features/development/ComponentCatalogScreen";
 import { PullRequestGuideStopScreen } from "./features/pull-requests/guide/PullRequestGuideScreen";
@@ -808,6 +809,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
           : THREAD_SETTINGS_SHEET_OPTIONS),
       },
     }),
+    ProjectTerminal: createNativeStackScreen({ screen: ProjectTerminalRouteScreen }),
     ThreadTerminal: createNativeStackScreen({
       screen: ThreadTerminalRouteScreen,
       linking: `${THREAD_LINKING_PREFIX}/terminal`,

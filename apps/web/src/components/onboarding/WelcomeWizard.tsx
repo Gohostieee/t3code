@@ -1,3 +1,4 @@
+import { PROVIDER_SETUP_TERMINAL_WORKSPACE_ID } from "@t3tools/contracts";
 import { useAuth } from "@clerk/react";
 import { useAtomValue } from "@effect/atom-react";
 import type {
@@ -9,7 +10,7 @@ import type {
   ServerConfig,
   ServerProvider,
 } from "@t3tools/contracts";
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -1026,7 +1027,7 @@ function AgentInstallTerminal({
   const setupGenerationRef = useRef(0);
   const activeSetupGenerationRef = useRef<number | null>(null);
   const [terminalId] = useState(() => `onboarding-${driver}-${randomUUID()}`);
-  const threadRef = scopeThreadRef(environmentId, AGENT_ONBOARDING_THREAD_ID);
+  const workspaceRef = { environmentId, workspaceId: PROVIDER_SETUP_TERMINAL_WORKSPACE_ID };
   const [setupAttempt, setSetupAttempt] = useState(0);
   const [setupState, setSetupState] = useState<
     "preparing" | "ready" | "openFailed" | "writeFailed"
@@ -1051,7 +1052,7 @@ function AgentInstallTerminal({
       const opened = await openTerminal({
         environmentId,
         input: {
-          threadId: AGENT_ONBOARDING_THREAD_ID,
+          workspaceId: PROVIDER_SETUP_TERMINAL_WORKSPACE_ID,
           terminalId,
           cwd,
           providerInstanceId,
@@ -1070,7 +1071,7 @@ function AgentInstallTerminal({
 
       const wrote = await writeTerminal({
         environmentId,
-        input: { threadId: AGENT_ONBOARDING_THREAD_ID, terminalId, data: command },
+        input: { workspaceId: PROVIDER_SETUP_TERMINAL_WORKSPACE_ID, terminalId, data: command },
       });
       if (activeSetupGenerationRef.current !== generation) return;
       setSetupState(wrote._tag === "Success" ? "ready" : "writeFailed");
@@ -1085,7 +1086,11 @@ function AgentInstallTerminal({
         if (!readEnvironmentScope(environmentId, AuthTerminalOperateScope)) return;
         await closeTerminal({
           environmentId,
-          input: { threadId: AGENT_ONBOARDING_THREAD_ID, terminalId, deleteHistory: true },
+          input: {
+            workspaceId: PROVIDER_SETUP_TERMINAL_WORKSPACE_ID,
+            terminalId,
+            deleteHistory: true,
+          },
         });
       });
     };
@@ -1147,8 +1152,7 @@ function AgentInstallTerminal({
       <div className="h-64">
         {terminalReady ? (
           <TerminalViewport
-            threadRef={threadRef}
-            threadId={AGENT_ONBOARDING_THREAD_ID}
+            workspaceRef={workspaceRef}
             terminalId={terminalId}
             terminalLabel={`Install ${driver}`}
             cwd={cwd}

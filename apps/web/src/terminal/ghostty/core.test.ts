@@ -71,7 +71,7 @@ describe("GhosttyTerminalCore snapshots", () => {
     return applyTerminalAttachStreamEvent(nextTerminalAttachSeedState(), {
       type: "snapshot",
       snapshot: {
-        threadId: "terminal-stream-test",
+        workspaceId: "terminal-stream-test",
         terminalId: "term-1",
         cwd: "/repo",
         worktreePath: null,
@@ -89,7 +89,7 @@ describe("GhosttyTerminalCore snapshots", () => {
   function append(state: TerminalBufferState, data: string) {
     return applyTerminalAttachStreamEvent(state, {
       type: "output",
-      threadId: "terminal-stream-test",
+      workspaceId: "terminal-stream-test",
       terminalId: "term-1",
       data,
     });
@@ -329,7 +329,7 @@ describe("GhosttyTerminalCore snapshots", () => {
     let cursor = initial.cursor;
 
     const snapshot = {
-      threadId: "terminal-stream-test",
+      workspaceId: "terminal-stream-test",
       terminalId: "term-1",
       cwd: "/repo",
       worktreePath: null,
@@ -343,8 +343,13 @@ describe("GhosttyTerminalCore snapshots", () => {
     };
     const events = [
       { type: "snapshot", snapshot },
-      { type: "cleared", threadId: snapshot.threadId, terminalId: snapshot.terminalId },
-      { type: "restarted", threadId: snapshot.threadId, terminalId: snapshot.terminalId, snapshot },
+      { type: "cleared", workspaceId: snapshot.workspaceId, terminalId: snapshot.terminalId },
+      {
+        type: "restarted",
+        workspaceId: snapshot.workspaceId,
+        terminalId: snapshot.terminalId,
+        snapshot,
+      },
     ] as const;
     for (const event of events) {
       core.write("\r\nstale local text");

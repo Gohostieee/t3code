@@ -1,3 +1,4 @@
+import { useThreadTerminalWorkspace } from "../../state/terminalWorkspace";
 import type { ThreadStructure } from "@t3tools/client-runtime/state/shell";
 import type {
   EnvironmentId,
@@ -149,11 +150,13 @@ export function useWorktreeSetup(input: {
   // Failed bootstrap deletes threads and terminals; expose terminals only for active threads.
   const setupThreadRef =
     worktreeSetup && threadRef && worktreeSetup.threadId === threadRef.threadId ? threadRef : null;
-  const openSetupTerminal = setupThreadRef
-    ? (terminalId: string) => {
-        storeEnsureTerminal(setupThreadRef, terminalId, { open: true, active: true });
-      }
-    : null;
+  const setupWorkspace = useThreadTerminalWorkspace(setupThreadRef);
+  const openSetupTerminal =
+    setupThreadRef && setupWorkspace.ref
+      ? (terminalId: string) => {
+          storeEnsureTerminal(setupWorkspace.ref!, terminalId, { open: true, active: true });
+        }
+      : null;
 
   return {
     worktreeSetup,

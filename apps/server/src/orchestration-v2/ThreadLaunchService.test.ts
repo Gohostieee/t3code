@@ -2094,6 +2094,7 @@ it.effect.each([0, 1])("releases an async setup before its completion with exit 
           scriptName: "Setup",
           scriptCommand: "vp install",
           terminalId: "setup",
+          workspaceId: "test-workspace",
           cwd: "/repo-worktrees/feature",
           completion: Deferred.await(completion),
         }),

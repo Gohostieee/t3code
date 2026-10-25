@@ -57,7 +57,7 @@ const LSOF_TEST_PORT = 43_123;
 const ownedScanner = (processIds: ReadonlyArray<number> = [1234]) =>
   Effect.tap(PortScanner.PortDiscovery, (scanner) =>
     scanner.registerTerminalProcesses({
-      threadId: "scanner-thread",
+      workspaceId: "scanner-thread",
       terminalId: "scanner-terminal",
       processIds,
     }),
@@ -325,7 +325,7 @@ effectIt.effect("probes a port only while T3 terminals own every listener on it"
     expect(requests).toEqual([`http://localhost:${LSOF_TEST_PORT}/`]);
 
     yield* scanner.unregisterTerminal({
-      threadId: "scanner-thread",
+      workspaceId: "scanner-thread",
       terminalId: "scanner-terminal",
     });
     expect(yield* scanner.scan()).toHaveLength(0);
@@ -489,7 +489,7 @@ effectIt.effect("ignores a partial Windows netstat snapshot when one query exits
   return Effect.gen(function* () {
     const scanner = yield* PortScanner.PortDiscovery;
     yield* scanner.registerTerminalProcesses({
-      threadId: "scanner-thread",
+      workspaceId: "scanner-thread",
       terminalId: "scanner-terminal",
       processIds: [1234],
     });

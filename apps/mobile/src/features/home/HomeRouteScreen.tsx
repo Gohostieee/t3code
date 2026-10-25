@@ -1,3 +1,4 @@
+import { ProjectTerminalLauncher } from "../terminal/ProjectTerminalRouteScreen";
 import { uuidv4 } from "../../lib/uuid";
 import { ThreadUndoNotice } from "./ThreadUndoNotice";
 import { Toolbar } from "../../components/ui/Toolbar";
@@ -246,6 +247,7 @@ export function HomeRouteScreen() {
           onStartNewTask={startNewTask}
         />
 
+        <ProjectTerminalLauncher />
         <HomeScreen
           catalogState={catalogState}
           environments={environments}

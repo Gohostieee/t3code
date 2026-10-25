@@ -1,3 +1,5 @@
+import { useThreadTerminalWorkspace } from "../../state/terminalWorkspace";
+import { terminalEnvironment } from "../../state/terminal";
 import * as Dialog from "../../components/ui/Dialog";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
@@ -60,10 +62,7 @@ import {
   nextOpenTerminalId,
   resolveProjectScriptTerminalId,
 } from "../terminal/terminalMenu";
-import {
-  resolvePreferredThreadWorktreePath,
-  stagePendingTerminalLaunch,
-} from "../terminal/terminalLaunchContext";
+import { resolvePreferredThreadWorktreePath } from "../terminal/terminalLaunchContext";
 import { terminalDebugLog } from "../terminal/terminalDebugLog";
 import type { ThreadDetailScreenProps } from "./ThreadDetailScreen";
 import { ThreadScreenBinding, ThreadScreenFallback, ThreadScreenHost } from "./ThreadScreenHost";
@@ -308,6 +307,13 @@ function ThreadRouteContent(
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
   const requests = useSelectedThreadRequests();
+  const terminalWorkspace = useThreadTerminalWorkspace(
+    selectedThread
+      ? { environmentId: selectedThread.environmentId, threadId: selectedThread.id }
+      : null,
+  );
+  const openTerminal = useAtomCommand(terminalEnvironment.open, "open terminal");
+  const runTerminalTask = useAtomCommand(terminalEnvironment.runTask, "run project script");
   const interruptThreadTurn = useAtomCommand(threadEnvironment.interruptTurn, "thread interrupt");
   const resumeThreadQueue = useAtomCommand(threadEnvironment.resumeThreadQueue, "resume queue");
   const loadEarlierHistory = useAtomCommand(threadEnvironment.loadEarlierHistory, {
@@ -621,7 +627,7 @@ function ThreadRouteContent(
     });
   };
 
-  const handleOpenNewTerminal = () => {
+  const handleOpenNewTerminal = async () => {
     terminalDebugLog("terminal-menu:open-new", {
       hasThread: Boolean(selectedThread),
       hasWorkspaceRoot: Boolean(selectedThreadProject?.workspaceRoot),
@@ -636,13 +642,18 @@ function ThreadRouteContent(
       return;
     }
 
-    const nextId = nextOpenTerminalId({
-      listedTerminalIds: terminalMenuSessions.map((session) => session.terminalId),
-      ...(knownTerminalSessions === null ||
-      !readEnvironmentScope(selectedThread.environmentId, AuthTerminalReadScope)
-        ? { uniqueSuffix: uuidv4() }
-        : {}),
+    if (!terminalWorkspace.data) return;
+    const opened = await openTerminal({
+      environmentId: selectedThread.environmentId,
+      input: {
+        workspaceId: terminalWorkspace.data.id,
+        terminalId: nextOpenTerminalId(),
+        cwd: terminalWorkspace.data.cwd,
+        worktreePath: terminalWorkspace.data.worktreePath,
+      },
     });
+    if (opened._tag !== "Success") return;
+    const nextId = opened.value.terminalId;
     void navigation.navigate("ThreadTerminal", {
       environmentId: String(selectedThread.environmentId),
       threadId: String(selectedThread.id),
@@ -670,16 +681,8 @@ function ThreadRouteContent(
       return;
     }
 
-    const targetTerminalId = resolveProjectScriptTerminalId({
-      existingTerminalIds: terminalMenuSessions.map((session) => session.terminalId),
-      ...(knownTerminalSessions === null ||
-      !readEnvironmentScope(selectedThread.environmentId, AuthTerminalReadScope)
-        ? { uniqueSuffix: uuidv4() }
-        : {}),
-      hasRunningTerminal: terminalMenuSessions.some(
-        (session) => session.status === "running" || session.status === "starting",
-      ),
-    });
+    if (!terminalWorkspace.data) return;
+    const targetTerminalId = resolveProjectScriptTerminalId();
     const preferredWorktreePath = resolvePreferredThreadWorktreePath({
       threadShellWorktreePath: selectedThread.worktreePath ?? null,
       threadDetailWorktreePath: selectedThreadDetailWorktreePath,
@@ -692,25 +695,18 @@ function ThreadRouteContent(
       project: { cwd: selectedThreadProject.workspaceRoot },
       worktreePath: preferredWorktreePath,
     });
-    stagePendingTerminalLaunch({
-      target: {
-        environmentId: selectedThread.environmentId,
-        threadId: selectedThread.id,
+    const task = await runTerminalTask({
+      environmentId: selectedThread.environmentId,
+      input: {
+        workspaceId: terminalWorkspace.data.id,
         terminalId: targetTerminalId,
-      },
-      launch: {
         cwd,
         worktreePath: preferredWorktreePath,
         env,
-        initialInput: projectScriptTerminalInput(script.command),
+        command: projectScriptTerminalInput(script.command),
       },
     });
-    terminalDebugLog("project-script:staged", {
-      scriptId: script.id,
-      terminalId: targetTerminalId,
-      cwd,
-      worktreePath: preferredWorktreePath,
-    });
+    if (task._tag !== "Success") return;
 
     void navigation.navigate("ThreadTerminal", {
       environmentId: String(selectedThread.environmentId),

@@ -1,3 +1,4 @@
+import { openProjectTerminal } from "../projectTerminalStore";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
 import { resolveThreadCurrentPullRequestLink } from "@t3tools/client-runtime/thread-pull-requests";
 import { Spinner } from "~/components/ui/spinner";
@@ -94,7 +95,7 @@ import {
   useThreadShellsForProjectRefs,
   waitForProjectRemoval,
 } from "../state/entities";
-import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import { useThreadTerminalUiState } from "../state/terminalWorkspace";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useThreadDiscoveredPorts } from "../portDiscoveryState";
 import { openDiscoveredPort } from "./preview/openDiscoveredPort";
@@ -208,7 +209,7 @@ import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useIsMobile } from "~/hooks/useMediaQuery";
 import { CommandDialogTrigger } from "./ui/command";
 import { useClientSettings, updateClientSettings } from "~/hooks/useSettings";
-import { primaryServerKeybindingsAtom, serverEnvironment } from "../state/server";
+import { primaryServerKeybindingsAtom } from "../state/server";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { canShareWithGuestAtom } from "./chat/guestShareAvailability";
 import { openGuestShareDialog } from "./chat/guestShareDialogState";
@@ -1626,7 +1627,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
       const actionHandlers = new Map<string, () => Promise<void> | void>();
       const makeLeaf = (
-        action: "rename" | "grouping" | "copy-path" | "delete",
+        action: "rename" | "grouping" | "copy-path" | "terminals" | "delete",
         member: SidebarProjectGroupMember,
         options?: {
           destructive?: boolean;
@@ -1636,6 +1637,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         const id = `${action}:${member.physicalProjectKey}`;
         actionHandlers.set(id, () => {
           switch (action) {
+            case "terminals":
+              openProjectTerminal({ environmentId: member.environmentId, projectId: member.id });
+              return;
             case "rename":
               openProjectRenameDialog(member);
               return;
@@ -1659,7 +1663,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       };
 
       const buildTargetedItem = (
-        action: "rename" | "grouping" | "copy-path" | "delete",
+        action: "rename" | "grouping" | "copy-path" | "terminals" | "delete",
         label: string,
         options?: {
           destructive?: boolean;
@@ -1707,6 +1711,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           }),
           buildTargetedItem("grouping", "Group into..."),
           buildTargetedItem("copy-path", "Copy Path"),
+          buildTargetedItem("terminals", "Project terminals"),
           { id: "project-settings", label: "Project settings", icon: "settings" },
           buildTargetedItem("delete", "Remove", {
             destructive: true,
@@ -3274,11 +3279,7 @@ export default function LegacySidebar({ routeReveal }: { routeReveal: SidebarRou
   );
   const routeThreadRef = resolveActiveThreadRouteRef(routeTarget, routeDraftThread);
   const routeThreadKey = routeThreadRef ? scopedThreadKey(routeThreadRef) : null;
-  const routeTerminalOpen = useTerminalUiStateStore((state) =>
-    routeThreadRef
-      ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
-      : false,
-  );
+  const routeTerminalOpen = useThreadTerminalUiState(routeThreadRef).terminalOpen;
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const [expandedThreadListsByProject, setExpandedThreadListsByProject] = useState<
     ReadonlySet<string>

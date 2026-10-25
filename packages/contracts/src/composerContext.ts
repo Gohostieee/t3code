@@ -108,6 +108,9 @@ export type FileContextRecord = typeof FileContextRecord.Type;
 export const TerminalContextRecord = Schema.Struct({
   ...recordBase,
   kind: Schema.Literal("terminal"),
+  environmentId: Schema.optional(ShortString),
+  workspaceId: Schema.optional(ShortString),
+  cwd: Schema.optional(ShortString),
   terminalId: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
   terminalLabel: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
   lineStart: NonNegativeInt,

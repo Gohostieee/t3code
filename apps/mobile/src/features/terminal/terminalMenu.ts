@@ -1,6 +1,7 @@
+import { uuidv4 } from "../../lib/uuid";
 import { type KnownTerminalSession } from "@t3tools/client-runtime/state/terminal";
-import { DEFAULT_TERMINAL_ID, type ProjectScript } from "@t3tools/contracts";
-import { nextTerminalId, resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
+import { type ProjectScript } from "@t3tools/contracts";
+import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
 
@@ -61,20 +62,8 @@ export function getTerminalStatusLabel(input: {
   return "Not started";
 }
 
-/** Count the mounted terminal before sessions load, or new-terminal navigation may replace it with itself. */
-export function nextOpenTerminalId(input: {
-  readonly listedTerminalIds: ReadonlyArray<string>;
-  readonly activeRouteTerminalId?: string | null;
-  readonly uniqueSuffix?: string;
-}): string {
-  const listed = input.listedTerminalIds.filter((id) => id.trim().length > 0);
-  const routeId = input.activeRouteTerminalId?.trim() ? input.activeRouteTerminalId : null;
-
-  if (!routeId || listed.includes(routeId)) {
-    return nextTerminalId(listed, input.uniqueSuffix);
-  }
-
-  return nextTerminalId([...listed, routeId], input.uniqueSuffix);
+export function nextOpenTerminalId(): string {
+  return uuidv4();
 }
 
 export function buildTerminalMenuSessions(input: {
@@ -134,16 +123,12 @@ export function previousLiveTerminalId(input: {
   return (below[below.length - 1] ?? live[0])?.terminalId ?? null;
 }
 
-export function resolveProjectScriptTerminalId(input: {
-  readonly existingTerminalIds: ReadonlyArray<string>;
-  readonly hasRunningTerminal: boolean;
-  readonly uniqueSuffix?: string;
-}): string {
-  if (!input.hasRunningTerminal && input.uniqueSuffix === undefined) {
-    return DEFAULT_TERMINAL_ID;
-  }
+export function resolveProjectScriptTerminalId(): string {
+  return `task-${uuidv4()}`;
+}
 
-  return nextTerminalId(input.existingTerminalIds, input.uniqueSuffix);
+export function projectScriptMenuLabel(script: ProjectScript): string {
+  return script.runOnWorktreeCreate ? `${script.name} (setup)` : script.name;
 }
 
 export function projectScriptMenuIcon(icon: ProjectScript["icon"]) {

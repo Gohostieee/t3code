@@ -2,6 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
   DEFAULT_TERMINAL_ID,
+  ProjectId,
   type TerminalAttachStreamEvent,
   type TerminalEvent,
   type TerminalOpenInput,
@@ -198,7 +199,7 @@ class GatedPtyAdapter extends FakePtyAdapter {
 
 function openInput(overrides: Partial<TerminalOpenInput> = {}): TerminalOpenInput {
   return {
-    threadId: "thread-1",
+    workspaceId: "thread-1",
     terminalId: DEFAULT_TERMINAL_ID,
     cwd: process.cwd(),
     cols: 100,
@@ -209,7 +210,7 @@ function openInput(overrides: Partial<TerminalOpenInput> = {}): TerminalOpenInpu
 
 function restartInput(overrides: Partial<TerminalRestartInput> = {}): TerminalRestartInput {
   return {
-    threadId: "thread-1",
+    workspaceId: "thread-1",
     terminalId: DEFAULT_TERMINAL_ID,
     cwd: process.cwd(),
     cols: 100,
@@ -218,9 +219,9 @@ function restartInput(overrides: Partial<TerminalRestartInput> = {}): TerminalRe
   };
 }
 
-const historyLogPath = (logsDir: string, threadId = "thread-1") =>
+const historyLogPath = (logsDir: string, workspaceId = "thread-1") =>
   Effect.service(Path.Path).pipe(
-    Effect.map(({ join }) => join(logsDir, `terminal_${Base64Url.encode(threadId)}.log`)),
+    Effect.map(({ join }) => join(logsDir, `terminal_${Base64Url.encode(workspaceId)}.log`)),
   );
 
 interface CreateManagerOptions {
@@ -424,10 +425,10 @@ it.layer(
       );
       const third = yield* manager.open(openInput());
 
-      assert.equal(first.threadId, "thread-1");
+      assert.equal(first.workspaceId, "thread-1");
       assert.equal(first.terminalId, DEFAULT_TERMINAL_ID);
-      assert.equal(second.threadId, "thread-1");
-      assert.equal(third.threadId, "thread-1");
+      assert.equal(second.workspaceId, "thread-1");
+      assert.equal(third.workspaceId, "thread-1");
       expect(ptyAdapter.spawnInputs).toHaveLength(1);
     }),
   );
@@ -436,22 +437,25 @@ it.layer(
     Effect.gen(function* () {
       const { manager, ptyAdapter } = yield* createManager();
       const attachEvents = yield* Ref.make<ReadonlyArray<TerminalAttachStreamEvent>>([]);
+      yield* manager.open(openInput());
       const unsubscribe = yield* manager.attachStream(openInput(), (event) =>
         Ref.update(attachEvents, (events) => [...events, event]),
       );
       yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
 
       yield* manager.close({
-        threadId: "thread-1",
+        workspaceId: "thread-1",
         terminalId: DEFAULT_TERMINAL_ID,
         deleteHistory: true,
       });
-      yield* manager.open(openInput());
+      yield* manager.restart({ ...openInput(), cols: 100, rows: 24 });
 
       const events = yield* Ref.get(attachEvents);
-      expect(events.map((event) => event.type)).toEqual(["snapshot", "closed", "snapshot"]);
+      expect(events.map((event) => event.type)).toEqual(["snapshot", "closed", "restarted"]);
       expect(
-        events.filter((event) => event.type === "snapshot").map((event) => event.snapshot.status),
+        events
+          .filter((event) => event.type === "snapshot" || event.type === "restarted")
+          .map((event) => event.snapshot.status),
       ).toEqual(["running", "running"]);
       expect(ptyAdapter.spawnInputs).toHaveLength(2);
     }),
@@ -461,7 +465,7 @@ it.layer(
     Effect.gen(function* () {
       const { manager, ptyAdapter } = yield* createManager();
       yield* manager.open(openInput());
-      yield* manager.close({ threadId: "thread-1", terminalId: DEFAULT_TERMINAL_ID });
+      yield* manager.close({ workspaceId: "thread-1", terminalId: DEFAULT_TERMINAL_ID });
 
       const attachEvents = yield* Ref.make<ReadonlyArray<TerminalAttachStreamEvent>>([]);
       const unsubscribe = yield* manager.attachStream(
@@ -469,37 +473,25 @@ it.layer(
         (event) => Ref.update(attachEvents, (events) => [...events, event]),
       );
       yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
-      expect((yield* Ref.get(attachEvents)).map((event) => event.type)).toEqual(["closed"]);
+      expect((yield* Ref.get(attachEvents)).map((event) => event.type)).toEqual(["snapshot"]);
       expect(ptyAdapter.spawnInputs).toHaveLength(1);
 
-      yield* manager.open(openInput());
+      yield* manager.restart(restartInput());
       const events = yield* Ref.get(attachEvents);
-      expect(events.map((event) => event.type)).toEqual(["closed", "snapshot"]);
+      expect(events.map((event) => event.type)).toEqual(["snapshot", "restarted"]);
       expect(ptyAdapter.spawnInputs).toHaveLength(2);
     }),
   );
 
-  it.effect("resumed attaches respect closes before this server has seen a terminal", () =>
+  it.effect("attachment to an unknown closed session never launches", () =>
     Effect.gen(function* () {
       const { manager, ptyAdapter } = yield* createManager();
-      yield* manager.close({ threadId: "thread-1", terminalId: DEFAULT_TERMINAL_ID });
-
-      const attachEvents = yield* Ref.make<ReadonlyArray<TerminalAttachStreamEvent>>([]);
-      const unsubscribe = yield* manager.attachStream(
-        { ...openInput(), restartIfNotRunning: true, resume: true },
-        (event) => Ref.update(attachEvents, (events) => [...events, event]),
-      );
-      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
-      expect((yield* Ref.get(attachEvents)).map((event) => event.type)).toEqual(["closed"]);
+      yield* manager.close({ workspaceId: "thread-1", terminalId: DEFAULT_TERMINAL_ID });
+      const error = yield* manager
+        .attachStream({ ...openInput(), resume: true }, () => Effect.void)
+        .pipe(Effect.flip);
+      expect(error._tag).toBe("TerminalSessionLookupError");
       expect(ptyAdapter.spawnInputs).toHaveLength(0);
-
-      const restarted = yield* manager.restart(restartInput());
-      expect(restarted.status).toBe("running");
-      expect((yield* Ref.get(attachEvents)).map((event) => event.type)).toEqual([
-        "closed",
-        "restarted",
-      ]);
-      expect(ptyAdapter.spawnInputs).toHaveLength(1);
     }),
   );
 
@@ -531,7 +523,7 @@ it.layer(
       expect(ptyAdapter.spawnInputs).toHaveLength(1);
 
       // Opening another terminal completes eviction before the next resumed attach.
-      yield* manager.open(openInput({ threadId: "thread-2" }));
+      yield* manager.open(openInput({ workspaceId: "thread-2" }));
       const unsubscribeEvicted = yield* manager.attachStream(
         { ...openInput(), restartIfNotRunning: true, resume: true },
         (event) => Ref.update(attachEvents, (events) => [...events, event]),
@@ -539,24 +531,241 @@ it.layer(
       yield* Effect.addFinalizer(() => Effect.sync(unsubscribeEvicted));
       expect((yield* Ref.get(attachEvents)).map((event) => event.type)).toEqual([
         "snapshot",
-        "closed",
+        "snapshot",
       ]);
       expect(ptyAdapter.spawnInputs).toHaveLength(2);
     }),
   );
 
-  it.effect("resumed attaches recreate terminals this server has never seen", () =>
+  it.effect("resumed attachment never creates an unknown session", () =>
     Effect.gen(function* () {
       const { manager, ptyAdapter } = yield* createManager();
-      const attachEvents = yield* Ref.make<ReadonlyArray<TerminalAttachStreamEvent>>([]);
-      const unsubscribe = yield* manager.attachStream({ ...openInput(), resume: true }, (event) =>
-        Ref.update(attachEvents, (events) => [...events, event]),
-      );
-      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
-      expect(yield* Ref.get(attachEvents)).toEqual([
-        { type: "snapshot", snapshot: expect.objectContaining({ status: "running" }) },
-      ]);
+      yield* manager.close({ workspaceId: "thread-1", terminalId: DEFAULT_TERMINAL_ID });
+      const error = yield* manager
+        .attachStream({ ...openInput(), resume: true }, () => Effect.void)
+        .pipe(Effect.flip);
+      expect(error._tag).toBe("TerminalSessionLookupError");
+      expect(ptyAdapter.spawnInputs).toHaveLength(0);
+    }),
+  );
+
+  it.effect("shares a checkout primary across concurrent opens and keeps independent shells", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter, baseDir } = yield* createManager();
+      const projectId = ProjectId.make("project-terminal-test");
+      const workspace = yield* manager.resolveWorkspace({
+        projectId,
+        cwd: baseDir,
+        worktreePath: null,
+      });
+      const again = yield* manager.resolveWorkspace({
+        projectId,
+        cwd: baseDir,
+        worktreePath: null,
+      });
+      expect(again.id).toBe(workspace.id);
+      const input = openInput({
+        workspaceId: workspace.id,
+        cwd: workspace.cwd,
+        selectPrimary: true,
+      });
+      const [first, second] = yield* Effect.all([manager.open(input), manager.open(input)], {
+        concurrency: "unbounded",
+      });
+      expect(first.terminalId).toBe(second.terminalId);
+      expect(first.generation).toBe(second.generation);
+      yield* manager.open({ ...input, terminalId: "independent", selectPrimary: false });
+      expect(ptyAdapter.processes).toHaveLength(2);
+      yield* manager.close({ workspaceId: workspace.id, terminalId: first.terminalId });
+      const selected = yield* manager.open(input);
+      expect(selected.terminalId).toBe("independent");
+      expect(ptyAdapter.processes).toHaveLength(2);
+    }),
+  );
+
+  it.effect(
+    "restores bounded transcripts after server shutdown without spawning or replaying a task",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "terminal-recovery-" });
+        const logsDir = path.join(baseDir, "logs");
+        const ptyAdapter = new FakePtyAdapter();
+        const make = TerminalManager.makeWithOptions({
+          logsDir,
+          ptyAdapter,
+          historyLineLimit: 5,
+          processKillGraceMs: 1,
+        });
+        const task = yield* Effect.scoped(
+          Effect.gen(function* () {
+            const manager = yield* make;
+            const workspace = yield* manager.resolveWorkspace({
+              projectId: ProjectId.make("recovery"),
+              cwd: baseDir,
+              worktreePath: null,
+            });
+            const input = {
+              ...openInput({ workspaceId: workspace.id, cwd: workspace.cwd }),
+              terminalId: "task-persisted",
+              command: "npm test\r",
+            };
+            yield* manager.runTask(input);
+            const received = yield* Deferred.make<void>();
+            yield* manager.subscribe((event) =>
+              event.type === "output"
+                ? Deferred.succeed(received, undefined).pipe(Effect.asVoid)
+                : Effect.void,
+            );
+            ptyAdapter.processes[0]!.emitData("saved before shutdown\n");
+            yield* Deferred.await(received);
+            return input;
+          }),
+        );
+        expect(ptyAdapter.processes[0]!.killed).toBe(true);
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const manager = yield* make;
+            const snapshots: TerminalAttachStreamEvent[] = [];
+            const stop = yield* manager.attachStream(task, (event) =>
+              Effect.sync(() => snapshots.push(event)),
+            );
+            stop();
+            expect(snapshots).toMatchObject([
+              {
+                type: "snapshot",
+                snapshot: {
+                  history: "saved before shutdown\n",
+                  status: "exited",
+                  taskStatus: "submitted",
+                },
+              },
+            ]);
+            const retry = yield* manager.runTask(task);
+            expect(retry.status).toBe("exited");
+            expect(ptyAdapter.spawnInputs).toHaveLength(1);
+            expect(ptyAdapter.processes[0]!.writes).toEqual(["npm test\r"]);
+          }),
+        );
+      }),
+  );
+
+  it.effect("does not replay a task whose write acknowledgement is uncertain", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter, baseDir } = yield* createManager();
+      const workspace = yield* manager.resolveWorkspace({
+        projectId: ProjectId.make("uncertain"),
+        cwd: baseDir,
+        worktreePath: null,
+      });
+      const input = {
+        ...openInput({ workspaceId: workspace.id, cwd: workspace.cwd }),
+        terminalId: "task-uncertain",
+        command: "npm test\r",
+      };
+      yield* manager.open(input);
+      ptyAdapter.processes[0]!.writeFailure = new Error("connection lost");
+      expect(Exit.isFailure(yield* manager.runTask(input).pipe(Effect.exit))).toBe(true);
+      expect(Exit.isFailure(yield* manager.runTask(input).pipe(Effect.exit))).toBe(true);
       expect(ptyAdapter.spawnInputs).toHaveLength(1);
+      expect(ptyAdapter.processes[0]!.writes).toEqual([]);
+    }),
+  );
+
+  it.effect("keeps task retries idempotent without writing into interactive shells", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter, baseDir } = yield* createManager();
+      const workspace = yield* manager.resolveWorkspace({
+        projectId: ProjectId.make("tasks"),
+        cwd: baseDir,
+        worktreePath: null,
+      });
+      const input = openInput({ workspaceId: workspace.id, cwd: workspace.cwd });
+      yield* manager.open(input);
+      const task = { ...input, terminalId: "task-request", command: "npm test\r" };
+      const [first, retried] = yield* Effect.all([manager.runTask(task), manager.runTask(task)], {
+        concurrency: "unbounded",
+      });
+      expect(first.generation).toBe(retried.generation);
+      expect(ptyAdapter.processes[0]!.writes).toEqual([]);
+      expect(ptyAdapter.processes[1]!.writes).toEqual(["npm test\r"]);
+      yield* manager.close({ workspaceId: workspace.id, terminalId: task.terminalId });
+      yield* manager.runTask(task);
+      expect(ptyAdapter.processes).toHaveLength(2);
+    }),
+  );
+
+  it.effect("rejects stale writes and generation-specific worktree removal approval", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter, baseDir } = yield* createManager();
+      const workspace = yield* manager.resolveWorkspace({
+        projectId: ProjectId.make("removal"),
+        cwd: baseDir,
+        worktreePath: null,
+      });
+      const input = openInput({ workspaceId: workspace.id, cwd: workspace.cwd });
+      const first = yield* manager.open(input);
+      const blocked = yield* manager
+        .withCheckoutRemoval(workspace.cwd, Effect.void)
+        .pipe(Effect.flip);
+      expect(blocked._tag).toBe("TerminalWorkspaceError");
+      if (blocked._tag !== "TerminalWorkspaceError") return;
+      expect(ptyAdapter.processes[0]!.killed).toBe(false);
+      const restarted = yield* manager.restart({
+        ...input,
+        cols: 80,
+        rows: 24,
+        generation: first.generation,
+      });
+      const stale = yield* manager
+        .write({
+          workspaceId: workspace.id,
+          terminalId: first.terminalId,
+          generation: first.generation,
+          data: "danger\r",
+        })
+        .pipe(Effect.flip);
+      expect(stale._tag).toBe("TerminalWorkspaceError");
+      const staleApproval = yield* manager
+        .withCheckoutRemoval(workspace.cwd, Effect.void, blocked.sessions)
+        .pipe(Effect.flip);
+      expect(staleApproval._tag).toBe("TerminalWorkspaceError");
+      expect(ptyAdapter.processes[1]!.killed).toBe(false);
+      expect(ptyAdapter.processes[1]!.writes).toEqual([]);
+      yield* manager.withCheckoutRemoval(workspace.cwd, Effect.void, [
+        {
+          workspaceId: workspace.id,
+          terminalId: restarted.terminalId,
+          generation: restarted.generation!,
+          label: "Terminal",
+        },
+      ]);
+      expect(ptyAdapter.processes[1]!.killed).toBe(true);
+      expect((yield* manager.open(input).pipe(Effect.flip))._tag).toBe("TerminalWorkspaceError");
+    }),
+  );
+
+  it.effect("closes all project shells and prevents reopening after project removal", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter, baseDir } = yield* createManager();
+      const projectId = ProjectId.make("deleted-project");
+      const workspace = yield* manager.resolveWorkspace({
+        projectId,
+        cwd: baseDir,
+        worktreePath: null,
+      });
+      yield* manager.open(openInput({ workspaceId: workspace.id, cwd: workspace.cwd }));
+      yield* manager.closeProject(projectId);
+      expect(ptyAdapter.processes[0]!.killed).toBe(true);
+      expect(
+        (yield* manager
+          .resolveWorkspace({ projectId, cwd: baseDir, worktreePath: null })
+          .pipe(Effect.flip))._tag,
+      ).toBe("TerminalWorkspaceError");
+      expect((yield* manager.validateWorkspace(workspace.id).pipe(Effect.flip))._tag).toBe(
+        "TerminalWorkspaceError",
+      );
     }),
   );
 
@@ -613,8 +822,8 @@ it.layer(
       expect(second).toBeDefined();
       if (!first || !second) return;
 
-      yield* manager.write({ threadId: "thread-1", terminalId: "default", data: "pwd\n" });
-      yield* manager.write({ threadId: "thread-1", terminalId: "term-2", data: "ls\n" });
+      yield* manager.write({ workspaceId: "thread-1", terminalId: "default", data: "pwd\n" });
+      yield* manager.write({ workspaceId: "thread-1", terminalId: "term-2", data: "ls\n" });
 
       expect(first.writes).toEqual(["pwd\n"]);
       expect(second.writes).toEqual(["ls\n"]);
@@ -639,9 +848,9 @@ it.layer(
       yield* manager.open(openInput({ terminalId: "idle" }));
       yield* manager.open(openInput({ terminalId: "dev-server" }));
       yield* manager.open(openInput({ terminalId: "subshell" }));
-      yield* manager.open(openInput({ threadId: "thread-2" }));
+      yield* manager.open(openInput({ workspaceId: "thread-2" }));
 
-      yield* manager.closeIdle({ threadId: "thread-1" });
+      yield* manager.closeIdle({ workspaceId: "thread-1" });
 
       expect(ptyAdapter.processes.map((process) => process.killed)).toEqual([
         true,
@@ -677,14 +886,14 @@ it.layer(
       duringCheck = (pid) =>
         pid === typed!.pid
           ? manager
-              .write({ threadId: "thread-1", terminalId: "typed", data: "make build\r" })
+              .write({ workspaceId: "thread-1", terminalId: "typed", data: "make build\r" })
               .pipe(Effect.orDie)
           : Effect.gen(function* () {
               echoed!.emitData("make build\r\n");
               yield* Deferred.await(outputSeen);
             }).pipe(Effect.orDie);
 
-      yield* manager.closeIdle({ threadId: "thread-1" });
+      yield* manager.closeIdle({ workspaceId: "thread-1" });
 
       expect(ptyAdapter.processes.map((process) => process.killed)).toEqual([false, false]);
     }),
@@ -702,7 +911,7 @@ it.layer(
       process.emitData("\n");
       process.emitData("line3");
       process.emitData("-continued\nline4");
-      yield* manager.close({ threadId: "thread-1" });
+      yield* manager.close({ workspaceId: "thread-1" });
 
       const reopened = yield* manager.open(openInput());
       expect(reopened.history).toBe("\nline3-continued\nline4");
@@ -713,6 +922,7 @@ it.layer(
     Effect.gen(function* () {
       const { manager, ptyAdapter, logsDir } = yield* createManager(5, { historyByteLimit: 10 });
       const attachEvents = yield* Ref.make<ReadonlyArray<TerminalAttachStreamEvent>>([]);
+      yield* manager.open(openInput());
       const unsubscribe = yield* manager.attachStream(openInput(), (event) =>
         Ref.update(attachEvents, (events) => [...events, event]),
       );
@@ -720,7 +930,7 @@ it.layer(
       const writes = ["a".repeat(32), "😀\rEND"];
       const process = ptyAdapter.processes[0]!;
       for (const text of writes) process.emitData(text);
-      yield* manager.close({ threadId: "thread-1" });
+      yield* manager.close({ workspaceId: "thread-1" });
       expect(yield* readFileString(yield* historyLogPath(logsDir))).toBe("aa😀\rEND");
 
       const reopened = yield* manager.open(openInput());
@@ -728,7 +938,12 @@ it.layer(
       expect(events.filter((event) => event.type === "output").map((event) => event.data)).toEqual(
         writes,
       );
-      const snapshot = events.filter((event) => event.type === "snapshot").at(-1)?.snapshot;
+      const snapshots: TerminalAttachStreamEvent[] = [];
+      const stop = yield* manager.attachStream(openInput(), (event) =>
+        Effect.sync(() => snapshots.push(event)),
+      );
+      stop();
+      const snapshot = snapshots.find((event) => event.type === "snapshot")?.snapshot;
       expect(snapshot?.history).toBe("aa😀\rEND");
       expect(snapshot?.sequence).toBe(reopened.sequence);
     }),
@@ -745,7 +960,7 @@ it.layer(
       process.emitData(before);
       process.emitData("\u001b[5");
       process.emitData(`n${after}`);
-      yield* manager.close({ threadId: "thread-1" });
+      yield* manager.close({ workspaceId: "thread-1" });
 
       expect((yield* manager.open(openInput())).history).toBe(before + after);
     }),
@@ -768,7 +983,7 @@ it.layer(
       process.emitData('\u001b[!p\u001b["p\u001b[4 q\u001b[u');
       process.emitData("done\n");
 
-      yield* manager.close({ threadId: "thread-1" });
+      yield* manager.close({ workspaceId: "thread-1" });
 
       const reopened = yield* manager.open(openInput());
       expect(reopened.history.startsWith('prompt \u001b[!p\u001b["p\u001b[4 q\u001b[udone\n')).toBe(
@@ -796,7 +1011,7 @@ it.layer(
       process.emitData("\u0090+q544e");
       process.emitData("\u009cafter\n");
 
-      yield* manager.close({ threadId: "thread-1" });
+      yield* manager.close({ workspaceId: "thread-1" });
 
       const reopened = yield* manager.open(openInput());
       assert.equal(reopened.history, "before after after after after\n");
@@ -851,7 +1066,7 @@ it.layer(
           }),
         ),
       );
-      yield* manager.close({ threadId: "thread-1" });
+      yield* manager.close({ workspaceId: "thread-1" });
 
       expect(largeStringReads).toBeLessThan(2 * expected.length);
       expect(yield* readFileString(yield* historyLogPath(logsDir))).toBe(expected);
@@ -873,7 +1088,7 @@ it.layer(
         process.emitData("\u001b(");
         process.emitData("Bafter\n");
 
-        yield* manager.close({ threadId: "thread-1" });
+        yield* manager.close({ workspaceId: "thread-1" });
 
         const reopened = yield* manager.open(openInput());
         expect(reopened.history.startsWith("before \u001b(Bafter\n")).toBe(true);
@@ -883,47 +1098,55 @@ it.layer(
   it.effect.each([
     {
       label: "subagent",
-      threadId:
+      workspaceId:
         "thread:provider:claudeAgent:native-thread:provider-thread%3Aprovider%3AclaudeAgent%3Anative-thread%3Apending%253Arun%253Athread%253A9175fb53-52d7-4d4d-9be7-25a76cf84b91%253Aordinal%253A7%3Aad899ae84c7a131b0",
     },
     // Also too long for the legacy `<sanitized id>.log` lookup.
-    { label: "300-character", threadId: "x".repeat(300) },
-  ])("persists history for a $label thread id too long to encode into a filename", ({ threadId }) =>
-    Effect.gen(function* () {
-      const terminalId = "t".repeat(128);
-      const { manager, ptyAdapter, logsDir } = yield* createManager();
-      const fs = yield* FileSystem.FileSystem;
-      yield* manager.open(openInput({ threadId }));
-      yield* manager.open(openInput({ threadId, terminalId }));
-      ptyAdapter.processes[0]!.emitData("default\n");
-      ptyAdapter.processes[1]!.emitData("long\n");
-      yield* manager.close({ threadId });
+    { label: "300-character", workspaceId: "x".repeat(300) },
+  ])(
+    "persists history for a $label thread id too long to encode into a filename",
+    ({ workspaceId }) =>
+      Effect.gen(function* () {
+        const terminalId = "t".repeat(128);
+        const { manager, ptyAdapter, logsDir } = yield* createManager();
+        const fs = yield* FileSystem.FileSystem;
+        yield* manager.open(openInput({ workspaceId }));
+        yield* manager.open(openInput({ workspaceId, terminalId }));
+        ptyAdapter.processes[0]!.emitData("default\n");
+        ptyAdapter.processes[1]!.emitData("long\n");
+        yield* manager.close({ workspaceId });
 
-      expect((yield* manager.open(openInput({ threadId }))).history).toBe("default\n");
-      expect((yield* manager.open(openInput({ threadId, terminalId }))).history).toBe("long\n");
+        expect((yield* manager.open(openInput({ workspaceId }))).history).toBe("default\n");
+        expect((yield* manager.open(openInput({ workspaceId, terminalId }))).history).toBe(
+          "long\n",
+        );
 
-      yield* manager.close({ threadId, deleteHistory: true });
-      expect(yield* fs.readDirectory(logsDir)).toEqual([]);
-    }),
+        yield* manager.close({ workspaceId, deleteHistory: true });
+        expect((yield* fs.readDirectory(logsDir)).filter((name) => name.endsWith(".log"))).toEqual(
+          [],
+        );
+      }),
   );
 
   it.effect("keeps reading and deleting history at an encoded path that already fit", () =>
     Effect.gen(function* () {
-      const threadId = "x".repeat(120);
+      const workspaceId = "x".repeat(120);
       const { manager, logsDir } = yield* createManager();
       const fs = yield* FileSystem.FileSystem;
-      const logPath = yield* historyLogPath(logsDir, threadId);
+      const logPath = yield* historyLogPath(logsDir, workspaceId);
       yield* fs.makeDirectory(logsDir, { recursive: true });
       yield* fs.writeFileString(logPath, "before upgrade\n");
 
-      expect((yield* manager.open(openInput({ threadId }))).history).toBe("before upgrade\n");
+      expect((yield* manager.open(openInput({ workspaceId }))).history).toBe("before upgrade\n");
       // A long terminal id pushes only this terminal's name past the limit, so the thread's
       // history is split across both forms and deleting the thread must remove both.
-      yield* manager.open(openInput({ threadId, terminalId: "t".repeat(128) }));
+      yield* manager.open(openInput({ workspaceId, terminalId: "t".repeat(128) }));
 
-      yield* manager.close({ threadId, deleteHistory: true });
+      yield* manager.close({ workspaceId, deleteHistory: true });
       expect(yield* fs.exists(logPath)).toBe(false);
-      expect(yield* fs.readDirectory(logsDir)).toEqual([]);
+      expect((yield* fs.readDirectory(logsDir)).filter((name) => name.endsWith(".log"))).toEqual(
+        [],
+      );
     }),
   );
 
@@ -1309,7 +1532,7 @@ it.layer(
     ),
   );
 
-  it.effect("restarts a running terminal when the resolved provider environment changes", () =>
+  it.effect("requires explicit restart to apply changed provider credentials", () =>
     Effect.gen(function* () {
       const providerInstanceId = ProviderInstanceId.make("codex_work");
       let providerSecret = "first-secret";
@@ -1320,7 +1543,10 @@ it.layer(
 
       yield* manager.open(openInput({ providerInstanceId }));
       providerSecret = "second-secret";
-      yield* manager.open(openInput({ providerInstanceId }));
+      const changed = yield* manager.open(openInput({ providerInstanceId })).pipe(Effect.exit);
+      expect(Exit.isFailure(changed)).toBe(true);
+      expect(ptyAdapter.processes[0]?.killed).toBe(false);
+      yield* manager.restart(restartInput({ providerInstanceId }));
 
       expect(ptyAdapter.processes[0]?.killed).toBe(true);
       expect(ptyAdapter.spawnInputs).toHaveLength(2);
@@ -1392,7 +1618,7 @@ it.layer(
       expect(yield* readFileString(logPath)).toBe("");
 
       ptyAdapter.processes[1]!.emitData("discarded again\nnew-one\nnew-two\n");
-      yield* manager.close({ threadId: "thread-1" });
+      yield* manager.close({ workspaceId: "thread-1" });
       expect(yield* readFileString(logPath)).toBe("new-two\n");
     }).pipe(
       Effect.provide(
@@ -1440,7 +1666,7 @@ it.layer(
   it.effect("removes terminal metadata subscriptions when initial delivery fails", () =>
     Effect.gen(function* () {
       const { manager } = yield* createManager();
-      yield* manager.open(openInput({ threadId: "existing-thread" }));
+      yield* manager.open(openInput({ workspaceId: "existing-thread" }));
 
       const leakedLiveEvents = yield* Ref.make(0);
       const exit = yield* Effect.exit(
@@ -1453,12 +1679,12 @@ it.layer(
 
       expect(Exit.isFailure(exit)).toBe(true);
 
-      yield* manager.open(openInput({ threadId: "new-thread" }));
+      yield* manager.open(openInput({ workspaceId: "new-thread" }));
       expect(yield* Ref.get(leakedLiveEvents)).toBe(0);
     }),
   );
 
-  it.effect("finishes shell startup when its creating attachment is cancelled", () =>
+  it.effect("finishes shell startup when its explicit open request is cancelled", () =>
     Effect.gen(function* () {
       const ptyAdapter = new GatedPtyAdapter();
       const { manager } = yield* createManager(5, { ptyAdapter });
@@ -1468,12 +1694,9 @@ it.layer(
         release: yield* Deferred.make<void>(),
       };
       ptyAdapter.gate = gate;
-      const consumer = yield* Stream.runDrain(
-        terminalOutputStream(
-          (listener, registerCleanup) => manager.attachStream(input, listener, registerCleanup),
-          (listener, registerCleanup) => manager.resyncStream(input, listener, registerCleanup),
-        ),
-      ).pipe(Effect.forkChild({ startImmediately: true }));
+      const consumer = yield* manager
+        .open(input)
+        .pipe(Effect.forkChild({ startImmediately: true }));
       yield* Deferred.await(gate.spawning);
       const cancelled = yield* Fiber.interrupt(consumer).pipe(
         Effect.forkChild({ startImmediately: true }),
@@ -1501,6 +1724,7 @@ it.layer(
       const historyByteLimit = 64 * 1024;
       const { manager } = yield* createManager(5, { ptyAdapter, historyByteLimit });
       const input = openInput();
+      yield* manager.open(input);
       const pull = yield* Stream.toPull(
         terminalOutputStream(
           (listener, registerCleanup) => manager.attachStream(input, listener, registerCleanup),
@@ -1524,12 +1748,12 @@ it.layer(
       yield* publishPastOutputBudget(manager, process);
       yield* manager.close(input);
       expect(yield* pull).toEqual([
-        { type: "closed", threadId: input.threadId, terminalId: input.terminalId },
+        { type: "snapshot", snapshot: expect.objectContaining({ status: "closed" }) },
       ]);
       expect(ptyAdapter.spawnInputs).toHaveLength(1);
-      yield* manager.open(input);
+      yield* manager.restart({ ...input, cols: 100, rows: 24 });
       expect(yield* pull).toMatchObject([
-        { type: "snapshot", snapshot: { status: "running", pid: ptyAdapter.processes[1]!.pid } },
+        { type: "restarted", snapshot: { status: "running", pid: ptyAdapter.processes[1]!.pid } },
       ]);
       const reopenedProcess = ptyAdapter.processes[1]!;
       reopenedProcess.emitData("after reopen\n");
@@ -1548,7 +1772,7 @@ it.layer(
       yield* Deferred.await(gate.spawning);
       const closed = yield* manager.close(input).pipe(Effect.forkChild({ startImmediately: true }));
       const reopened = yield* manager
-        .open(input)
+        .restart({ ...input, cols: 100, rows: 24 })
         .pipe(Effect.forkChild({ startImmediately: true }));
       const recovery = yield* pull.pipe(Effect.forkChild({ startImmediately: true }));
       reopenedProcess.emitData("old session\n");
@@ -1561,8 +1785,14 @@ it.layer(
       expect(batch).toHaveLength(1);
       expect(batch[0]).toMatchObject({
         type: "snapshot",
-        snapshot: { status: "running", pid: ptyAdapter.processes.at(-1)!.pid },
+        snapshot: { status: "closed" },
       });
+      expect(yield* pull).toMatchObject([
+        {
+          type: "restarted",
+          snapshot: { status: "running", pid: ptyAdapter.processes.at(-1)!.pid },
+        },
+      ]);
       ptyAdapter.processes.at(-1)!.emitData("new session only\n");
       expect(yield* pull).toMatchObject([{ type: "output", data: "new session only\n" }]);
       expect(ptyAdapter.spawnInputs).toHaveLength(4);
@@ -1624,7 +1854,7 @@ it.layer(
       const observed = yield* Ref.make<ReadonlyArray<TerminalAttachStreamEvent>>([]);
       const liveReceived = yield* Deferred.make<void>();
       const unsubscribe = yield* manager.observeStream(
-        { threadId: opened.threadId, terminalId: opened.terminalId },
+        { workspaceId: opened.workspaceId, terminalId: opened.terminalId },
         (event) =>
           Ref.update(observed, (events) => [...events, event]).pipe(
             Effect.andThen(
@@ -1663,7 +1893,7 @@ it.layer(
       const { manager, ptyAdapter } = yield* createManager();
       const missingEvents: TerminalAttachStreamEvent[] = [];
       const missing = yield* manager
-        .observeStream({ threadId: "thread-1", terminalId: DEFAULT_TERMINAL_ID }, (event) =>
+        .observeStream({ workspaceId: "thread-1", terminalId: DEFAULT_TERMINAL_ID }, (event) =>
           Effect.sync(() => {
             missingEvents.push(event);
           }),
@@ -1686,7 +1916,7 @@ it.layer(
 
       const events: TerminalAttachStreamEvent[] = [];
       const unsubscribe = yield* manager.observeStream(
-        { threadId: "thread-1", terminalId: DEFAULT_TERMINAL_ID },
+        { workspaceId: "thread-1", terminalId: DEFAULT_TERMINAL_ID },
         (event) =>
           Effect.sync(() => {
             events.push(event);

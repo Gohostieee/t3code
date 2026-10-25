@@ -219,7 +219,15 @@ function formatComposerContextProviderPayload(record: KnownComposerContextRecord
         .split("\n")
         .slice(0, record.lineEnd - record.lineStart + 1)
         .map((line, index) => `${record.lineStart + index} | ${line}`);
-      return [`terminal: ${record.terminalLabel}`, ...lines].join("\n");
+      return [
+        `terminal: ${record.terminalLabel}`,
+        ...(record.cwd
+          ? [
+              `Source: ${record.cwd} (checkout ${record.workspaceId ?? "unknown"}, environment ${record.environmentId ?? "unknown"})`,
+            ]
+          : []),
+        ...lines,
+      ].join("\n");
     }
     case "element":
       return formatElementDetails(record).join("\n");

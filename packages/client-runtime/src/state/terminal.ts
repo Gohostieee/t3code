@@ -1,16 +1,16 @@
 import { type TerminalSummary, WS_METHODS } from "@t3tools/contracts";
-import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import { Atom } from "effect/reactivity";
 
 import {
   createAtomCommandScheduler,
   createEnvironmentRpcCommand,
+  createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
   createEnvironmentSubscriptionAtomFamily,
 } from "./runtime.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
-import { subscribe, subscribeDynamic, type EnvironmentRpcInput } from "../rpc/client.ts";
+import { subscribe, type EnvironmentRpcInput } from "../rpc/client.ts";
 import {
   applyTerminalAttachStreamEvent,
   applyTerminalMetadataStreamEvent,
@@ -22,22 +22,38 @@ export function createTerminalEnvironmentAtoms<R, E>(
 ) {
   const lifecycleScheduler = createAtomCommandScheduler();
   const resizeScheduler = createAtomCommandScheduler();
-  const terminalThreadKey = ({
+  const terminalWorkspaceKey = ({
     environmentId,
     input,
   }: {
     readonly environmentId: string;
-    readonly input: { readonly threadId: string; readonly terminalId?: string | undefined };
-  }) => JSON.stringify([environmentId, input.threadId]);
+    readonly input: { readonly workspaceId: string; readonly terminalId?: string | undefined };
+  }) => JSON.stringify([environmentId, input.workspaceId]);
   const terminalSessionKey = ({
     environmentId,
     input,
   }: {
     readonly environmentId: string;
-    readonly input: { readonly threadId: string; readonly terminalId?: string | undefined };
-  }) => JSON.stringify([environmentId, input.threadId, input.terminalId ?? null]);
-  const lifecycleConcurrency = { mode: "serial" as const, key: terminalThreadKey };
+    readonly input: { readonly workspaceId: string; readonly terminalId?: string | undefined };
+  }) => JSON.stringify([environmentId, input.workspaceId, input.terminalId ?? null]);
+  const lifecycleConcurrency = { mode: "serial" as const, key: terminalWorkspaceKey };
   return {
+    resolve: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:terminal:resolve",
+      tag: WS_METHODS.terminalResolveWorkspace,
+    }),
+    legacyHistory: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:terminal:legacy-history",
+      tag: WS_METHODS.terminalLegacyHistory,
+    }),
+    workspaces: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:terminal:workspaces",
+      tag: WS_METHODS.terminalListWorkspaces,
+    }),
+    resolveWorkspace: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:terminal:workspace",
+      tag: WS_METHODS.terminalResolveWorkspace,
+    }),
     observe: createEnvironmentSubscriptionAtomFamily(runtime, {
       label: "environment-data:terminal:observe",
       subscribe: (input: EnvironmentRpcInput<typeof WS_METHODS.terminalObserve>) =>
@@ -49,20 +65,12 @@ export function createTerminalEnvironmentAtoms<R, E>(
     }),
     attach: createEnvironmentSubscriptionAtomFamily(runtime, {
       label: "environment-data:terminal:attach",
-      subscribe: (input: EnvironmentRpcInput<typeof WS_METHODS.terminalAttach>) => {
-        // Retry an unanswered first attach unchanged so it can still open the shell.
-        let replied = false;
-        return subscribeDynamic(WS_METHODS.terminalAttach, () =>
-          Effect.sync(() => (replied ? { ...input, resume: true } : input)),
-        ).pipe(
-          Stream.onFirst(() =>
-            Effect.sync(() => {
-              replied = true;
-            }),
+      subscribe: (input: EnvironmentRpcInput<typeof WS_METHODS.terminalAttach>) =>
+        Stream.suspend(() =>
+          subscribe(WS_METHODS.terminalAttach, input).pipe(
+            Stream.scan(nextTerminalAttachSeedState, applyTerminalAttachStreamEvent),
           ),
-          Stream.scan(nextTerminalAttachSeedState, applyTerminalAttachStreamEvent),
-        );
-      },
+        ),
     }),
     events: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:terminal:events",
@@ -76,6 +84,12 @@ export function createTerminalEnvironmentAtoms<R, E>(
           // The scan seed is not an authoritative empty server snapshot.
           Stream.drop(1),
         ),
+    }),
+    runTask: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:terminal:task",
+      tag: WS_METHODS.terminalRunTask,
+      scheduler: lifecycleScheduler,
+      concurrency: lifecycleConcurrency,
     }),
     open: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:terminal:open",

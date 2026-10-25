@@ -15,12 +15,12 @@ import {
 
 const TARGET = {
   environmentId: EnvironmentId.make("env-local"),
-  threadId: ThreadId.make("thread-1"),
+  workspaceId: ThreadId.make("thread-1"),
   terminalId: "term-1",
 } as const;
 
 const BASE_SNAPSHOT: TerminalSessionSnapshot = {
-  threadId: TARGET.threadId,
+  workspaceId: TARGET.workspaceId,
   terminalId: TARGET.terminalId,
   cwd: "/repo",
   worktreePath: null,
@@ -39,7 +39,7 @@ describe("terminal session reducers", () => {
       type: "snapshot",
       terminals: [
         {
-          threadId: BASE_SNAPSHOT.threadId,
+          workspaceId: BASE_SNAPSHOT.workspaceId,
           terminalId: BASE_SNAPSHOT.terminalId,
           cwd: BASE_SNAPSHOT.cwd,
           worktreePath: BASE_SNAPSHOT.worktreePath,
@@ -55,7 +55,7 @@ describe("terminal session reducers", () => {
     })[0]!;
     const attached = applyTerminalAttachStreamEvent(EMPTY_TERMINAL_BUFFER_STATE, {
       type: "error",
-      threadId: TARGET.threadId,
+      workspaceId: TARGET.workspaceId,
       terminalId: TARGET.terminalId,
       message: "Terminal disconnected.",
     });
@@ -76,7 +76,7 @@ describe("terminal session reducers", () => {
     const data = `${"x".repeat(16_384)}\uFEFF${"y".repeat(20)}`;
     const state = applyTerminalAttachStreamEvent(initial, {
       type: "output",
-      threadId: TARGET.threadId,
+      workspaceId: TARGET.workspaceId,
       terminalId: TARGET.terminalId,
       data,
     });
@@ -111,7 +111,7 @@ describe("terminal session reducers", () => {
     ] as const) {
       state = applyTerminalAttachStreamEvent(
         state,
-        { type: "output", threadId: TARGET.threadId, terminalId: TARGET.terminalId, data },
+        { type: "output", workspaceId: TARGET.workspaceId, terminalId: TARGET.terminalId, data },
         12,
       );
       const update = readTerminalOutputUpdate(state.output, cursor);
@@ -132,7 +132,7 @@ describe("terminal session reducers", () => {
     for (const data of [" one", " two", " three"]) {
       state = applyTerminalAttachStreamEvent(state, {
         type: "output",
-        threadId: TARGET.threadId,
+        workspaceId: TARGET.workspaceId,
         terminalId: TARGET.terminalId,
         data,
       });
@@ -153,14 +153,19 @@ describe("terminal session reducers", () => {
     ).cursor;
     const first = applyTerminalAttachStreamEvent(initial, {
       type: "output",
-      threadId: TARGET.threadId,
+      workspaceId: TARGET.workspaceId,
       terminalId: TARGET.terminalId,
       data: "hello",
     });
     const caughtUpCursor = readTerminalOutputUpdate(first.output, staleCursor).cursor;
     const state = applyTerminalAttachStreamEvent(
       first,
-      { type: "output", threadId: TARGET.threadId, terminalId: TARGET.terminalId, data: " world" },
+      {
+        type: "output",
+        workspaceId: TARGET.workspaceId,
+        terminalId: TARGET.terminalId,
+        data: " world",
+      },
       8,
     );
 
@@ -189,14 +194,14 @@ describe("terminal session reducers", () => {
 
     state = applyTerminalAttachStreamEvent(state, {
       type: "cleared",
-      threadId: TARGET.threadId,
+      workspaceId: TARGET.workspaceId,
       terminalId: TARGET.terminalId,
     });
     const cleared = readTerminalOutputUpdate(state.output, cursor);
     expect(cleared).toMatchObject({ type: "reset", data: "" });
     state = applyTerminalAttachStreamEvent(state, {
       type: "restarted",
-      threadId: TARGET.threadId,
+      workspaceId: TARGET.workspaceId,
       terminalId: TARGET.terminalId,
       snapshot: BASE_SNAPSHOT,
     });
@@ -236,7 +241,7 @@ describe("terminal session reducers", () => {
     for (const [index, data] of writes.entries()) {
       state = applyTerminalAttachStreamEvent(state, {
         type: "output",
-        threadId: TARGET.threadId,
+        workspaceId: TARGET.workspaceId,
         terminalId: TARGET.terminalId,
         data,
       });

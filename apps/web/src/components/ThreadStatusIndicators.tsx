@@ -1,3 +1,4 @@
+import { useThreadTerminalWorkspace } from "../state/terminalWorkspace";
 import {
   scopeProjectRef,
   scopedThreadKey,
@@ -69,7 +70,7 @@ export interface PrStatusIndicator {
 }
 
 export interface TerminalStatusIndicator {
-  label: "Terminal process running";
+  label: "Shared checkout terminal running";
   colorClass: string;
   pulse: boolean;
 }
@@ -708,7 +709,7 @@ export function terminalStatusFromRunningIds(
     return null;
   }
   return {
-    label: "Terminal process running",
+    label: "Shared checkout terminal running",
     colorClass: "text-teal-600 dark:text-teal-300/90",
     pulse: true,
   };
@@ -733,6 +734,7 @@ export function ThreadTerminalStatusButton({
   terminalIds: readonly string[];
   onThreadActivate: (threadRef: ScopedThreadRef) => void;
 }) {
+  const workspace = useThreadTerminalWorkspace(threadRef);
   const terminalId = terminalIds[0];
   if (terminalId === undefined) return null;
   const status = terminalStatusFromRunningIds(terminalIds);
@@ -757,7 +759,7 @@ export function ThreadTerminalStatusButton({
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
-              revealThreadTerminal(threadRef, terminalId);
+              if (workspace.ref) revealThreadTerminal(threadRef, terminalId, workspace.ref);
               onThreadActivate(threadRef);
             }}
           />

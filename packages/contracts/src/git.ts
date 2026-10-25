@@ -1,4 +1,5 @@
 import * as Effect from "effect/Effect";
+import { TerminalRemovalSession } from "./terminal.ts";
 import * as Schema from "effect/Schema";
 import {
   ForwardCompatibleOptional,
@@ -172,6 +173,7 @@ export const GitPreparePullRequestThreadInput = Schema.Struct({
 export type GitPreparePullRequestThreadInput = typeof GitPreparePullRequestThreadInput.Type;
 
 export const VcsRemoveWorktreeInput = Schema.Struct({
+  confirmedTerminalSessions: Schema.optional(Schema.Array(TerminalRemovalSession)),
   cwd: TrimmedNonEmptyStringSchema,
   path: TrimmedNonEmptyStringSchema,
   force: Schema.optional(Schema.Boolean),

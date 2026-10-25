@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId } from "@t3tools/contracts";
 
 import {
   resolveTerminalOpenLocation,
@@ -59,7 +59,7 @@ describe("pending terminal launches", () => {
   it("stages and consumes launch details for a specific terminal target", () => {
     const target = {
       environmentId: EnvironmentId.make("env-1"),
-      threadId: ThreadId.make("thread-1"),
+      workspaceId: "workspace-1",
       terminalId: "term-2",
     };
 

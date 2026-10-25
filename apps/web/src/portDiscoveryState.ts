@@ -9,6 +9,7 @@ import { isLoopbackHost } from "@t3tools/shared/preview";
 
 import { previewEnvironment } from "./state/preview";
 import { useEnvironmentQuery } from "./state/query";
+import { useThreadTerminalWorkspace } from "./state/terminalWorkspace";
 
 const EMPTY_PORTS: ReadonlyArray<DiscoveredLocalServer> = Object.freeze([]);
 
@@ -71,7 +72,27 @@ export function useThreadDiscoveredPorts(input: {
   readonly threadId: ThreadId | null;
 }): ReadonlyArray<DiscoveredLocalServer> {
   const ports = useDiscoveredPorts(input.environmentId);
-  return input.threadId
-    ? ports.filter((port) => port.terminal?.threadId === input.threadId)
+  const workspace = useThreadTerminalWorkspace(
+    input.environmentId && input.threadId
+      ? { environmentId: input.environmentId, threadId: input.threadId }
+      : null,
+  );
+  return workspace.data
+    ? ports.filter((port) => port.terminal?.workspaceId === workspace.data?.id)
+    : EMPTY_PORTS;
+}
+
+export function useTerminalDiscoveredPorts(input: {
+  readonly environmentId: EnvironmentId | null;
+  readonly workspaceId: string | null;
+  readonly terminalId: string | null;
+}): ReadonlyArray<DiscoveredLocalServer> {
+  const ports = useDiscoveredPorts(input.environmentId);
+  return input.workspaceId && input.terminalId
+    ? ports.filter(
+        (port) =>
+          port.terminal?.workspaceId === input.workspaceId &&
+          port.terminal.terminalId === input.terminalId,
+      )
     : EMPTY_PORTS;
 }

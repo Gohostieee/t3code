@@ -1,3 +1,4 @@
+import { ProjectTerminalDialog } from "../components/ProjectTerminalDialog";
 import { AuthPreviewOperateScope } from "@t3tools/contracts";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { Outlet, createFileRoute, redirect, useMatches } from "@tanstack/react-router";
@@ -27,7 +28,7 @@ import { isTerminalFocused } from "../lib/terminalFocus";
 import { isEditableFocused } from "../lib/editableFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { resolveShortcutCommand } from "../keybindings";
-import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import { useThreadTerminalUiState } from "../state/terminalWorkspace";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
@@ -55,11 +56,7 @@ function ChatRouteGlobalShortcuts() {
     primaryEnvironmentId,
     resolveEnvironmentLabel: () => null,
   }).length;
-  const terminalOpen = useTerminalUiStateStore((state) =>
-    routeThreadRef
-      ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
-      : false,
-  );
+  const terminalOpen = useThreadTerminalUiState(routeThreadRef).terminalOpen;
   // This flag is store-only; dispatch the action bus to reuse ChatView's URL-aware arbitration.
   const previewOpen = useRightPanelStore((state) =>
     routeThreadRef
@@ -218,6 +215,7 @@ function ChatRouteLayout() {
   return (
     <>
       {modalOpen ? null : <ChatRouteGlobalShortcuts />}
+      <ProjectTerminalDialog />
       {shownTarget?.kind === "server" && !modalOpen ? (
         <ThreadLinkPrompt threadRef={shownTarget.threadRef} />
       ) : null}

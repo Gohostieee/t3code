@@ -320,7 +320,7 @@ export const DiscoveredLocalServer = Schema.Struct({
   pid: Schema.NullOr(Schema.Int.check(Schema.isGreaterThan(0))),
   terminal: Schema.NullOr(
     Schema.Struct({
-      threadId: ThreadId,
+      workspaceId: TrimmedNonEmptyString,
       terminalId: TrimmedNonEmptyString,
     }),
   ),

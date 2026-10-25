@@ -1,9 +1,57 @@
 import * as Schema from "effect/Schema";
-import { TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { TrimmedNonEmptyString, type EnvironmentId, ProjectId } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
-export const DEFAULT_TERMINAL_ID = "term-1";
+export const TerminalWorkspace = Schema.Struct({
+  available: Schema.optional(Schema.Boolean),
+  id: TrimmedNonEmptyString,
+  projectId: ProjectId,
+  cwd: TrimmedNonEmptyString,
+  worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type TerminalWorkspace = typeof TerminalWorkspace.Type;
+
+export interface ScopedTerminalWorkspaceRef {
+  readonly environmentId: EnvironmentId;
+  readonly workspaceId: string;
+}
+
+export const TerminalProjectInput = Schema.Struct({
+  projectId: ProjectId,
+  expectedProjectRoot: Schema.optional(TrimmedNonEmptyString),
+});
+
+export const TerminalResolveWorkspaceInput = Schema.Struct({
+  ...TerminalProjectInput.fields,
+  worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+});
+
+export const TerminalLegacyHistoryInput = Schema.Struct({
+  historyId: Schema.optional(TrimmedNonEmptyString),
+});
+export const TerminalLegacyHistoryResult = Schema.Struct({
+  histories: Schema.Array(Schema.Struct({ id: Schema.String, label: Schema.String })),
+  text: Schema.NullOr(Schema.String),
+});
+export type TerminalLegacyHistoryResult = typeof TerminalLegacyHistoryResult.Type;
+
+export const TerminalRemovalSession = Schema.Struct({
+  workspaceId: Schema.String,
+  terminalId: Schema.String,
+  generation: Schema.String,
+  label: Schema.String,
+});
+export type TerminalRemovalSession = typeof TerminalRemovalSession.Type;
+
+export class TerminalWorkspaceError extends Schema.TaggedError<TerminalWorkspaceError>()(
+  "TerminalWorkspaceError",
+  { message: Schema.String, sessions: Schema.optional(Schema.Array(TerminalRemovalSession)) },
+) {}
+
+/** Stable identity of the shared primary shell. Additional sessions use unique client ids. */
 export const DEFAULT_MAX_TERMINAL_BUFFER_BYTES = 512 * 1024;
+export const DEFAULT_TERMINAL_ID = "term-1";
+export const MAX_RETAINED_TERMINAL_SUMMARIES = 128;
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
 const TerminalColsSchema = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).check(
@@ -21,19 +69,21 @@ const TerminalEnvSchema = Schema.Record(TerminalEnvKeySchema, TerminalEnvValueSc
   Schema.isMaxProperties(128),
 );
 
-export const TerminalThreadInput = Schema.Struct({
-  threadId: TrimmedNonEmptyStringSchema,
+export const TerminalWorkspaceInput = Schema.Struct({
+  workspaceId: TrimmedNonEmptyStringSchema,
 });
-export type TerminalThreadInput = typeof TerminalThreadInput.Type;
+export type TerminalWorkspaceInput = typeof TerminalWorkspaceInput.Type;
 
 // Terminal ids are client-chosen; the server never allocates them.
 const TerminalSessionInput = Schema.Struct({
-  ...TerminalThreadInput.fields,
+  ...TerminalWorkspaceInput.fields,
   terminalId: TerminalIdSchema,
+  generation: Schema.optional(TrimmedNonEmptyString),
 });
 export type TerminalSessionInput = Schema.Codec.Encoded<typeof TerminalSessionInput>;
 
 export const TerminalOpenInput = Schema.Struct({
+  selectPrimary: Schema.optional(Schema.Boolean),
   ...TerminalSessionInput.fields,
   cwd: TrimmedNonEmptyStringSchema,
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyStringSchema)),
@@ -43,6 +93,12 @@ export const TerminalOpenInput = Schema.Struct({
   providerInstanceId: Schema.optional(ProviderInstanceId),
 });
 export type TerminalOpenInput = typeof TerminalOpenInput.Type;
+
+export const TerminalTaskInput = Schema.Struct({
+  ...TerminalOpenInput.fields,
+  command: Schema.String.check(Schema.isNonEmpty()).check(Schema.isMaxLength(65_536)),
+});
+export type TerminalTaskInput = typeof TerminalTaskInput.Type;
 
 export const TerminalAttachInput = Schema.Struct({
   ...TerminalSessionInput.fields,
@@ -89,17 +145,28 @@ export const TerminalRestartInput = Schema.Struct({
 export type TerminalRestartInput = typeof TerminalRestartInput.Type;
 
 export const TerminalCloseInput = Schema.Struct({
-  ...TerminalThreadInput.fields,
+  ...TerminalWorkspaceInput.fields,
+  generation: Schema.optional(TrimmedNonEmptyString),
   terminalId: Schema.optional(TerminalIdSchema),
   deleteHistory: Schema.optional(Schema.Boolean),
 });
 export type TerminalCloseInput = typeof TerminalCloseInput.Type;
 
-export const TerminalSessionStatus = Schema.Literals(["starting", "running", "exited", "error"]);
+export const TerminalSessionStatus = Schema.Literals([
+  "starting",
+  "running",
+  "exited",
+  "closed",
+  "error",
+]);
 export type TerminalSessionStatus = typeof TerminalSessionStatus.Type;
 
 export const TerminalSessionSnapshot = Schema.Struct({
-  threadId: Schema.String.check(Schema.isNonEmpty()),
+  taskStatus: Schema.optional(Schema.Literals(["unknown", "submitted"])),
+  kind: Schema.optional(Schema.Literals(["interactive", "task"])),
+  primary: Schema.optional(Schema.Boolean),
+  generation: Schema.optional(TrimmedNonEmptyString),
+  workspaceId: Schema.String.check(Schema.isNonEmpty()),
   terminalId: Schema.String.check(Schema.isNonEmpty()),
   cwd: Schema.String.check(Schema.isNonEmpty()),
   worktreePath: Schema.NullOr(TrimmedNonEmptyStringSchema),
@@ -115,7 +182,11 @@ export const TerminalSessionSnapshot = Schema.Struct({
 export type TerminalSessionSnapshot = typeof TerminalSessionSnapshot.Type;
 
 export const TerminalSummary = Schema.Struct({
-  threadId: Schema.String.check(Schema.isNonEmpty()),
+  taskStatus: Schema.optional(Schema.Literals(["unknown", "submitted"])),
+  kind: Schema.optional(Schema.Literals(["interactive", "task"])),
+  primary: Schema.optional(Schema.Boolean),
+  generation: Schema.optional(TrimmedNonEmptyString),
+  workspaceId: Schema.String.check(Schema.isNonEmpty()),
   terminalId: Schema.String.check(Schema.isNonEmpty()),
   cwd: Schema.String.check(Schema.isNonEmpty()),
   worktreePath: Schema.NullOr(TrimmedNonEmptyStringSchema),
@@ -141,7 +212,7 @@ const TerminalMetadataUpsertEvent = Schema.Struct({
 
 const TerminalMetadataRemoveEvent = Schema.Struct({
   type: Schema.Literal("remove"),
-  threadId: Schema.String.check(Schema.isNonEmpty()),
+  workspaceId: Schema.String.check(Schema.isNonEmpty()),
   terminalId: Schema.String.check(Schema.isNonEmpty()),
 });
 
@@ -153,7 +224,7 @@ export const TerminalMetadataStreamEvent = Schema.Union([
 export type TerminalMetadataStreamEvent = typeof TerminalMetadataStreamEvent.Type;
 
 const TerminalEventBaseSchema = Schema.Struct({
-  threadId: Schema.String.check(Schema.isNonEmpty()),
+  workspaceId: Schema.String.check(Schema.isNonEmpty()),
   terminalId: Schema.String.check(Schema.isNonEmpty()),
   sequence: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
 });
@@ -280,25 +351,25 @@ export class TerminalHistoryError extends Schema.TaggedError<TerminalHistoryErro
   "TerminalHistoryError",
   {
     operation: Schema.Literals(["read", "truncate", "migrate"]),
-    threadId: Schema.String,
+    workspaceId: Schema.String,
     terminalId: Schema.String,
     cause: Schema.optional(Schema.Defect()),
   },
 ) {
   override get message() {
-    return `Failed to ${this.operation} terminal history for thread: ${this.threadId}, terminal: ${this.terminalId}`;
+    return `Failed to ${this.operation} terminal history for workspace: ${this.workspaceId}, terminal: ${this.terminalId}`;
   }
 }
 
 export class TerminalSessionLookupError extends Schema.TaggedError<TerminalSessionLookupError>()(
   "TerminalSessionLookupError",
   {
-    threadId: Schema.String,
+    workspaceId: Schema.String,
     terminalId: Schema.String,
   },
 ) {
   override get message() {
-    return `Unknown terminal thread: ${this.threadId}, terminal: ${this.terminalId}`;
+    return `Unknown terminal workspace: ${this.workspaceId}, terminal: ${this.terminalId}`;
   }
 }
 
@@ -328,33 +399,33 @@ export class TerminalProviderEnvironmentError extends Schema.TaggedError<Termina
 export class TerminalNotRunningError extends Schema.TaggedError<TerminalNotRunningError>()(
   "TerminalNotRunningError",
   {
-    threadId: Schema.String,
+    workspaceId: Schema.String,
     terminalId: Schema.String,
   },
 ) {
   override get message() {
-    return `Terminal is not running for thread: ${this.threadId}, terminal: ${this.terminalId}`;
+    return `Terminal is not running for workspace: ${this.workspaceId}, terminal: ${this.terminalId}`;
   }
 }
 
 export class TerminalWriteError extends Schema.TaggedError<TerminalWriteError>()(
   "TerminalWriteError",
   {
-    threadId: Schema.String,
+    workspaceId: Schema.String,
     terminalId: Schema.String,
     terminalPid: Schema.Number,
     cause: Schema.Defect(),
   },
 ) {
   override get message() {
-    return `Failed to write to terminal for thread: ${this.threadId}, terminal: ${this.terminalId}, PID: ${this.terminalPid}`;
+    return `Failed to write to terminal for workspace: ${this.workspaceId}, terminal: ${this.terminalId}, PID: ${this.terminalPid}`;
   }
 }
 
 export class TerminalResizeError extends Schema.TaggedError<TerminalResizeError>()(
   "TerminalResizeError",
   {
-    threadId: Schema.String,
+    workspaceId: Schema.String,
     terminalId: Schema.String,
     terminalPid: Schema.Number,
     cols: TerminalColsSchema,
@@ -363,11 +434,12 @@ export class TerminalResizeError extends Schema.TaggedError<TerminalResizeError>
   },
 ) {
   override get message() {
-    return `Failed to resize terminal for thread: ${this.threadId}, terminal: ${this.terminalId}, PID: ${this.terminalPid} to ${this.cols}x${this.rows}`;
+    return `Failed to resize terminal for workspace: ${this.workspaceId}, terminal: ${this.terminalId}, PID: ${this.terminalPid} to ${this.cols}x${this.rows}`;
   }
 }
 
 export const TerminalError = Schema.Union([
+  TerminalWorkspaceError,
   TerminalCwdError,
   TerminalHistoryError,
   TerminalSessionLookupError,
@@ -378,3 +450,6 @@ export const TerminalError = Schema.Union([
   TerminalResizeError,
 ]);
 export type TerminalError = typeof TerminalError.Type;
+
+/** Environment-owned installer shell, available before a project has been added. */
+export const PROVIDER_SETUP_TERMINAL_WORKSPACE_ID = "system:provider-setup";

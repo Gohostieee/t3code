@@ -303,6 +303,7 @@ const make = Effect.gen(function* () {
     const tracked = input.workspaceStrategy.type === "worktree" || reused !== undefined;
     let createdWorktreePath: string | null = null;
     let setupTerminalId: string | null = null;
+    let setupWorkspaceId: string | null = null;
     let workspaceRecorded = false;
     let runReleased = false;
     // Stop background renames before forgetting worktrees; completed renames record them again.
@@ -589,6 +590,7 @@ const make = Effect.gen(function* () {
       let awaitAsyncSetup = Effect.void;
       if (setup.status === "started") {
         setupTerminalId = setup.terminalId;
+        setupWorkspaceId = setup.workspaceId;
         yield* setupTracker.update(threadId, (snapshot) => ({
           ...snapshot,
           setupScript: {
@@ -661,9 +663,13 @@ const make = Effect.gen(function* () {
             cancelled ? "cancelled" : "failed",
             cancelled ? null : failureDetail(Cause.squash(cause)),
           );
-          if (cancelled && setupTerminalId)
+          if (cancelled && setupTerminalId && setupWorkspaceId)
             yield* terminals
-              .close({ threadId, terminalId: setupTerminalId, deleteHistory: true })
+              .close({
+                workspaceId: setupWorkspaceId,
+                terminalId: setupTerminalId,
+                deleteHistory: true,
+              })
               .pipe(Effect.ignore);
           if (
             tracked &&

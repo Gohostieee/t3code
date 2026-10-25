@@ -40,6 +40,7 @@ export type RightPanelSurface =
   | {
       id: `terminal:${string}`;
       kind: "terminal";
+      workspaceId?: string | undefined;
       resourceId: string;
       terminalIds: string[];
       activeTerminalId: string;
@@ -152,7 +153,7 @@ interface RightPanelStoreState {
     surfaceId: string,
     detailTab: PullRequestDetailTab,
   ) => void;
-  openTerminal: (ref: ScopedThreadRef, terminalId: string) => void;
+  openTerminal: (ref: ScopedThreadRef, terminalId: string, workspaceId: string) => void;
   splitTerminal: (
     ref: ScopedThreadRef,
     surfaceId: string,
@@ -242,9 +243,10 @@ const attachmentSurface = (attachment: ChatFileAttachment): RightPanelSurface =>
   attachment,
 });
 
-const terminalSurface = (terminalId: string): RightPanelSurface => ({
+const terminalSurface = (terminalId: string, workspaceId: string): RightPanelSurface => ({
   id: `terminal:${terminalId}`,
   kind: "terminal",
+  workspaceId,
   resourceId: terminalId,
   terminalIds: [terminalId],
   activeTerminalId: terminalId,
@@ -799,10 +801,10 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             );
           }),
         ),
-      openTerminal: (ref, terminalId) =>
+      openTerminal: (ref, terminalId, workspaceId) =>
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) =>
-            upsertSurface(current, terminalSurface(terminalId)),
+            upsertSurface(current, terminalSurface(terminalId, workspaceId)),
           ),
         ),
       splitTerminal: (ref, surfaceId, terminalId, direction = "horizontal") =>

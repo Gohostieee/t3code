@@ -1,3 +1,4 @@
+import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
@@ -28,7 +29,7 @@ import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
-import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import { useThreadTerminalUiState } from "../state/terminalWorkspace";
 import { cn, isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { useEnvironmentIdentificationMode, useLegacySidebarEnabled } from "../hooks/useSettings";
@@ -205,23 +206,21 @@ function SidebarControl() {
   );
 }
 
-function routePanelsOpen(routeThreadRef: ReturnType<typeof useThreadRouteRef>) {
-  if (!routeThreadRef) return { terminalOpen: false, previewOpen: false };
-  return {
-    terminalOpen: selectThreadTerminalUiState(
-      useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
-      routeThreadRef,
-    ).terminalOpen,
-    previewOpen:
-      selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, routeThreadRef) ===
-      "preview",
-  };
+function useRoutePanelsOpen(routeThreadRef: ScopedThreadRef | null) {
+  const terminalOpen = useThreadTerminalUiState(routeThreadRef).terminalOpen;
+  const previewOpen = useRightPanelStore(
+    (state) =>
+      routeThreadRef !== null &&
+      selectActiveRightPanel(state.byThreadKey, routeThreadRef) === "preview",
+  );
+  return { terminalOpen: routeThreadRef !== null && terminalOpen, previewOpen };
 }
 
 export function NavigationHistoryShortcuts() {
   const usagePageOpen = useLocation({ select: (location) => location.pathname === "/usage" });
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const routeThreadRef = useThreadRouteRef();
+  const routePanels = useRoutePanelsOpen(routeThreadRef);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -236,7 +235,7 @@ export function NavigationHistoryShortcuts() {
         context: {
           terminalFocus: isTerminalFocused(),
           previewFocus: isPreviewFocused(),
-          ...routePanelsOpen(routeThreadRef),
+          ...routePanels,
           editableFocus: isEditableFocused(event.target),
           modelPickerOpen: isModelPickerOpen(),
           usagePageOpen,
@@ -252,7 +251,7 @@ export function NavigationHistoryShortcuts() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [keybindings, routeThreadRef, usagePageOpen]);
+  }, [keybindings, routePanels, usagePageOpen]);
 
   return null;
 }
@@ -265,6 +264,7 @@ const MODIFIER_KEYS = new Set(["Alt", "Control", "Meta", "Shift"]);
 function ThreadUndoShortcut() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const routeThreadRef = useThreadRouteRef();
+  const routePanels = useRoutePanelsOpen(routeThreadRef);
   // A collapsed sidebar hides the notice, so text fields keep their own undo.
   const noticeVisible = useSidebarVisibility();
   // Outlives the effect: undoing an archive navigates, which re-runs it mid-hold.
@@ -287,7 +287,7 @@ function ThreadUndoShortcut() {
         context: {
           terminalFocus: isTerminalFocused(),
           previewFocus: isPreviewFocused(),
-          ...routePanelsOpen(routeThreadRef),
+          ...routePanels,
           editableFocus:
             isEditableFocused(event.target) && !(noticeVisible && threadUndoClaimsShortcut()),
           modelPickerOpen: isModelPickerOpen(),
@@ -313,7 +313,7 @@ function ThreadUndoShortcut() {
       window.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("input", onInput, true);
     };
-  }, [keybindings, noticeVisible, routeThreadRef]);
+  }, [keybindings, noticeVisible, routePanels]);
 
   return null;
 }

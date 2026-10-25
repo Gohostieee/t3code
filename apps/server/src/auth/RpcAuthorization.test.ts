@@ -46,6 +46,9 @@ describe("RPC authorization scopes", () => {
   it("separates passive terminal observation from operations that can change a shell", () => {
     for (const method of [
       WS_METHODS.terminalObserve,
+      WS_METHODS.terminalResolveWorkspace,
+      WS_METHODS.terminalListWorkspaces,
+      WS_METHODS.terminalLegacyHistory,
       WS_METHODS.subscribeTerminalEvents,
       WS_METHODS.subscribeTerminalMetadata,
     ]) {
@@ -54,6 +57,7 @@ describe("RPC authorization scopes", () => {
     for (const method of [
       WS_METHODS.terminalAttach,
       WS_METHODS.terminalOpen,
+      WS_METHODS.terminalRunTask,
       WS_METHODS.terminalWrite,
       WS_METHODS.terminalResize,
       WS_METHODS.terminalClear,

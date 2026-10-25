@@ -21,7 +21,8 @@ import {
 import { useProject, useQuietThreadShell } from "../state/entities";
 import { useEnvironmentScope } from "../state/session";
 import { useKnownTerminalSessions } from "../state/terminalSessions";
-import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import { selectWorkspaceTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import { useThreadTerminalWorkspace } from "../state/terminalWorkspace";
 import { useThreadTerminalActions } from "./terminal/useThreadTerminalActions";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import { resolveTerminalWorktreePath } from "./ChatView.logic";
@@ -103,6 +104,7 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
 }: PersistentThreadTerminalDrawerProps) {
   const canOperateTerminal = useEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope);
   const terminalActions = useThreadTerminalActions(threadRef);
+  const workspaceRef = terminalActions.workspaceRef;
   const serverThread = useQuietThreadShell(threadRef);
   const draftThread = useComposerDraftStore((store) => store.getDraftThreadByRef(threadRef));
   const projectRef = serverThread
@@ -112,7 +114,7 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
       : null;
   const project = useProject(projectRef);
   const terminalUiState = useTerminalUiStateStore((state) =>
-    selectThreadTerminalUiState(state.terminalUiStateByThreadKey, threadRef),
+    selectWorkspaceTerminalUiState(state.terminalUiStateByWorkspaceKey, workspaceRef),
   );
   const visible = active && terminalUiState.terminalOpen;
   const knownTerminalSessions = useKnownTerminalSessions({
@@ -139,10 +141,9 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
   for (const session of drawerTerminalSessions) {
     const summary = session.state.summary;
     if (!project || !summary) continue;
-    const worktreePathForLaunch =
-      launchContext !== null ? launchContext.worktreePath : summary.worktreePath;
+    const worktreePathForLaunch = summary.worktreePath;
     terminalLaunchLocationsById.set(session.target.terminalId, {
-      cwd: launchContext?.cwd ?? summary.cwd,
+      cwd: summary.cwd,
       worktreePath: worktreePathForLaunch,
       runtimeEnv: projectScriptRuntimeEnv({
         project: { cwd: project.workspaceRoot },
@@ -172,8 +173,8 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
     ) {
       return;
     }
-    reconcileTerminalIds(threadRef, serverOrderedTerminalIds);
-  }, [reconcileTerminalIds, serverOrderedTerminalIds, terminalUiState.terminalIds, threadRef]);
+    if (workspaceRef) reconcileTerminalIds(workspaceRef, serverOrderedTerminalIds);
+  }, [reconcileTerminalIds, serverOrderedTerminalIds, terminalUiState.terminalIds, workspaceRef]);
   const [localFocusRequestId, setLocalFocusRequestId] = useState(0);
   const worktreePath = serverThread?.worktreePath ?? draftThread?.worktreePath ?? null;
   const effectiveWorktreePath = launchContext !== null ? launchContext.worktreePath : worktreePath;
@@ -200,7 +201,7 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
   };
 
   const setTerminalHeight = (height: number) => {
-    storeSetTerminalHeight(threadRef, height);
+    storeSetTerminalHeight(workspaceRef!, height);
   };
 
   const launchDrawerTerminal = (place: (terminalId: string) => void) => {
@@ -214,24 +215,24 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
     void launched.result;
   };
   const splitTerminal = useStableCallback(() =>
-    launchDrawerTerminal((terminalId) => storeSplitTerminal(threadRef, terminalId)),
+    launchDrawerTerminal((terminalId) => storeSplitTerminal(workspaceRef!, terminalId)),
   );
   const splitTerminalVertical = useStableCallback(() =>
-    launchDrawerTerminal((terminalId) => storeSplitTerminalVertical(threadRef, terminalId)),
+    launchDrawerTerminal((terminalId) => storeSplitTerminalVertical(workspaceRef!, terminalId)),
   );
   const createNewTerminal = useStableCallback(() =>
-    launchDrawerTerminal((terminalId) => storeNewTerminal(threadRef, terminalId)),
+    launchDrawerTerminal((terminalId) => storeNewTerminal(workspaceRef!, terminalId)),
   );
 
   const activateTerminal = (terminalId: string) => {
-    storeSetActiveTerminal(threadRef, terminalId);
+    storeSetActiveTerminal(workspaceRef!, terminalId);
     bumpFocusRequestId();
   };
 
   const closeTerminal = useStableCallback((terminalId: string) => {
     if (!terminalActions.canWrite()) return;
     terminalActions.closeTerminalSession(terminalId);
-    storeCloseTerminal(threadRef, terminalId);
+    storeCloseTerminal(workspaceRef!, terminalId);
     bumpFocusRequestId();
   });
 
@@ -242,7 +243,7 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
     onAddTerminalContext(selection);
   };
 
-  if (!project || (!terminalUiState.terminalOpen && !active) || !cwd) {
+  if (!workspaceRef || !project || (!terminalUiState.terminalOpen && !active) || !cwd) {
     return null;
   }
 
@@ -259,7 +260,7 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
       <div className="min-h-0 overflow-clip">
         <ThreadTerminalDrawer
           threadRef={threadRef}
-          threadId={threadId}
+          workspaceRef={workspaceRef}
           cwd={cwd}
           worktreePath={effectiveWorktreePath}
           runtimeEnv={runtimeEnv}
@@ -329,6 +330,10 @@ export const PersistentThreadTerminalPanel = memo(function PersistentThreadTermi
   newShortcutLabel,
   closeShortcutLabel,
 }: PersistentThreadTerminalPanelProps) {
+  const workspace = useThreadTerminalWorkspace(threadRef);
+  const workspaceRef = surface.workspaceId
+    ? { environmentId: threadRef.environmentId, workspaceId: surface.workspaceId }
+    : null;
   const serverThread = useQuietThreadShell(threadRef);
   const draftThread = useComposerDraftStore((store) => store.getDraftThreadByRef(threadRef));
   const projectRef = serverThread
@@ -339,7 +344,7 @@ export const PersistentThreadTerminalPanel = memo(function PersistentThreadTermi
   const project = useProject(projectRef);
   const knownTerminalSessions = useKnownTerminalSessions({
     environmentId: threadRef.environmentId,
-    threadId: threadRef.threadId,
+    workspaceId: workspaceRef?.workspaceId ?? null,
   });
   const threadWorktreePath = serverThread?.worktreePath ?? draftThread?.worktreePath ?? null;
   const activeSummary =
@@ -386,6 +391,12 @@ export const PersistentThreadTerminalPanel = memo(function PersistentThreadTermi
     });
   }
 
+  if (!workspaceRef || workspaceRef.workspaceId !== workspace.data?.id)
+    return (
+      <p className="p-4 text-sm text-muted-foreground">
+        This terminal belongs to another checkout. Open Project terminals to find its session.
+      </p>
+    );
   if (!project || !cwd) return null;
 
   return (
@@ -393,7 +404,7 @@ export const PersistentThreadTerminalPanel = memo(function PersistentThreadTermi
       mode="panel"
       visible={visible}
       threadRef={threadRef}
-      threadId={threadRef.threadId}
+      workspaceRef={workspaceRef}
       cwd={cwd}
       worktreePath={worktreePath}
       runtimeEnv={runtimeEnv}

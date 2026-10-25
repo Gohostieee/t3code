@@ -220,10 +220,10 @@ const make = Effect.gen(function* () {
   const liveTerminals = new Map<string, Map<string, TerminalSummary>>();
   const orphanSizes = new Map<string, number | null>();
   const noteTerminal = (terminal: TerminalSummary) => {
-    const threadTerminals =
-      liveTerminals.get(terminal.threadId) ?? new Map<string, TerminalSummary>();
-    threadTerminals.set(terminal.terminalId, terminal);
-    liveTerminals.set(terminal.threadId, threadTerminals);
+    const workspaceTerminals =
+      liveTerminals.get(terminal.workspaceId) ?? new Map<string, TerminalSummary>();
+    workspaceTerminals.set(terminal.terminalId, terminal);
+    liveTerminals.set(terminal.workspaceId, workspaceTerminals);
   };
 
   const isWindows = yield* HostProcess.isWindows;
@@ -1029,8 +1029,15 @@ const make = Effect.gen(function* () {
         yield* gitManager.invalidateStatus(project.workspaceRoot);
         // Preserve branch/path so ProviderTurnStartService can recreate the checkout on resume.
         yield* Effect.logInfo("storage cleanup removed worktree", { threadId: thread.id });
+        return true;
       }).pipe(
-        (effect) => withWorkspaceLease(worktreePath, effect),
+        (effect) =>
+          terminals.withCheckoutRemoval(
+            worktreePath,
+            withWorkspaceLease(worktreePath, effect),
+            undefined,
+            (removed) => removed === true,
+          ),
         Effect.catch((error) =>
           Effect.gen(function* () {
             entries.push({
@@ -1225,9 +1232,9 @@ const make = Effect.gen(function* () {
         } else if (event.type === "upsert") {
           noteTerminal(event.terminal);
         } else {
-          const threadTerminals = liveTerminals.get(event.threadId);
-          threadTerminals?.delete(event.terminalId);
-          if (threadTerminals?.size === 0) liveTerminals.delete(event.threadId);
+          const workspaceTerminals = liveTerminals.get(event.workspaceId);
+          workspaceTerminals?.delete(event.terminalId);
+          if (workspaceTerminals?.size === 0) liveTerminals.delete(event.workspaceId);
         }
       }),
     );

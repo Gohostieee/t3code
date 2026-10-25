@@ -1,7 +1,6 @@
 import {
   CONFIGURED_LOCAL_SERVER_URLS_MAX_ITEMS,
   PREVIEW_URL_MAX_LENGTH,
-  ThreadId,
   type DiscoveredLocalServer,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -38,12 +37,12 @@ export class PortDiscovery extends Context.Service<
     ) => Effect.Effect<void, never, Scope.Scope>;
     readonly retain: Effect.Effect<void, never, Scope.Scope>;
     readonly registerTerminalProcesses: (input: {
-      readonly threadId: string;
+      readonly workspaceId: string;
       readonly terminalId: string;
       readonly processIds: ReadonlyArray<number>;
     }) => Effect.Effect<void>;
     readonly unregisterTerminal: (input: {
-      readonly threadId: string;
+      readonly workspaceId: string;
       readonly terminalId: string;
     }) => Effect.Effect<void>;
   }
@@ -84,7 +83,7 @@ interface ScannerState {
 }
 
 interface TerminalProcessOwner {
-  readonly threadId: ThreadId;
+  readonly workspaceId: string;
   readonly terminalId: string;
 }
 
@@ -106,9 +105,9 @@ interface WebProbeSnapshot {
 }
 
 const terminalOwnerKey = (owner: {
-  readonly threadId: string;
+  readonly workspaceId: string;
   readonly terminalId: string;
-}): string => `${owner.threadId}\u0000${owner.terminalId}`;
+}): string => `${owner.workspaceId}\u0000${owner.terminalId}`;
 
 const parseConfiguredUrl = (raw: string): URL | null => {
   try {
@@ -358,7 +357,7 @@ const serversEqual = (
       a.url !== b.url ||
       a.processName !== b.processName ||
       a.pid !== b.pid ||
-      a.terminal?.threadId !== b.terminal?.threadId ||
+      a.terminal?.workspaceId !== b.terminal?.workspaceId ||
       a.terminal?.terminalId !== b.terminal?.terminalId
     ) {
       return false;
@@ -839,7 +838,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
   const registerTerminalProcesses: PortDiscovery["Service"]["registerTerminalProcesses"] =
     Effect.fn("PortDiscovery.registerTerminalProcesses")(function* (input) {
       const owner = {
-        threadId: ThreadId.make(input.threadId),
+        workspaceId: input.workspaceId,
         terminalId: input.terminalId,
       };
       const processIds = new Set(

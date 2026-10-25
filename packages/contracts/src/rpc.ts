@@ -255,6 +255,12 @@ import {
   TerminalEvent,
   TerminalMetadataStreamEvent,
   TerminalOpenInput,
+  TerminalTaskInput,
+  TerminalLegacyHistoryInput,
+  TerminalLegacyHistoryResult,
+  TerminalResolveWorkspaceInput,
+  TerminalProjectInput,
+  TerminalWorkspace,
   TerminalResizeInput,
   TerminalRestartInput,
   TerminalSessionSnapshot,
@@ -297,7 +303,6 @@ import {
   DeviceSession,
   DeviceShutdownInput,
 } from "./device.ts";
-import {} from "./previewAutomation.ts";
 import {
   ServerConfigStreamEvent,
   DesktopUpdateCommitInput,
@@ -445,6 +450,11 @@ export const WS_METHODS = {
   reviewGetDiffPreview: "review.getDiffPreview",
   reviewGetDiffFileContents: "review.getDiffFileContents",
 
+  // Terminal methods
+  terminalLegacyHistory: "terminal.legacyHistory",
+  terminalListWorkspaces: "terminal.listWorkspaces",
+  terminalResolveWorkspace: "terminal.resolveWorkspace",
+  terminalRunTask: "terminal.runTask",
   terminalOpen: "terminal.open",
   terminalAttach: "terminal.attach",
   terminalObserve: "terminal.observe",
@@ -1416,7 +1426,7 @@ const WsVcsCreateWorktreeRpc = Rpc.make(WS_METHODS.vcsCreateWorktree, {
 
 const WsVcsRemoveWorktreeRpc = Rpc.make(WS_METHODS.vcsRemoveWorktree, {
   payload: VcsRemoveWorktreeInput,
-  error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
+  error: Schema.Union([TerminalError, GitCommandError, EnvironmentAuthorizationError]),
 });
 
 const WsVcsCreateRefRpc = Rpc.make(WS_METHODS.vcsCreateRef, {
@@ -1446,6 +1456,30 @@ const WsReviewGetDiffFileContentsRpc = Rpc.make(WS_METHODS.reviewGetDiffFileCont
   payload: ReviewDiffFileContentsInput,
   success: ReviewDiffFileContentsResult,
   error: Schema.Union([ReviewDiffPreviewError, EnvironmentAuthorizationError]),
+});
+
+const WsTerminalLegacyHistoryRpc = Rpc.make(WS_METHODS.terminalLegacyHistory, {
+  payload: TerminalLegacyHistoryInput,
+  success: TerminalLegacyHistoryResult,
+  error: Schema.Union([TerminalError, EnvironmentAuthorizationError]),
+});
+
+const WsTerminalListWorkspacesRpc = Rpc.make(WS_METHODS.terminalListWorkspaces, {
+  payload: TerminalProjectInput,
+  success: Schema.Array(TerminalWorkspace),
+  error: Schema.Union([TerminalError, EnvironmentAuthorizationError]),
+});
+
+const WsTerminalResolveWorkspaceRpc = Rpc.make(WS_METHODS.terminalResolveWorkspace, {
+  payload: TerminalResolveWorkspaceInput,
+  success: TerminalWorkspace,
+  error: Schema.Union([TerminalError, EnvironmentAuthorizationError]),
+});
+
+const WsTerminalRunTaskRpc = Rpc.make(WS_METHODS.terminalRunTask, {
+  payload: TerminalTaskInput,
+  success: TerminalSessionSnapshot,
+  error: Schema.Union([TerminalError, EnvironmentAuthorizationError]),
 });
 
 const WsTerminalOpenRpc = Rpc.make(WS_METHODS.terminalOpen, {
@@ -2053,6 +2087,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsVcsInitRpc,
   WsReviewGetDiffPreviewRpc,
   WsReviewGetDiffFileContentsRpc,
+  WsTerminalLegacyHistoryRpc,
+  WsTerminalListWorkspacesRpc,
+  WsTerminalResolveWorkspaceRpc,
+  WsTerminalRunTaskRpc,
   WsTerminalOpenRpc,
   WsTerminalAttachRpc,
   WsTerminalObserveRpc,

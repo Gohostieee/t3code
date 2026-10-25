@@ -41,7 +41,7 @@ describe("terminal selection actions", () => {
 it("retains visible output and selection until a replacement subscription receives its snapshot", () => {
   const terminal = { resetAndWrite: vi.fn(), write: vi.fn(), clearSelection: vi.fn() };
   const snapshot = {
-    threadId: "thread",
+    workspaceId: "thread",
     terminalId: "term-1",
     cwd: "/repo",
     worktreePath: null,
@@ -81,7 +81,7 @@ it("retains visible output and selection until a replacement subscription receiv
 
   const cleared = applyTerminalAttachStreamEvent(observed, {
     type: "cleared",
-    threadId: "thread",
+    workspaceId: "thread",
     terminalId: "term-1",
   });
   synchronizeTerminalOutput(terminal, cleared, observedCursor);

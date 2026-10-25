@@ -128,7 +128,7 @@ describe("rightPanelStore", () => {
     ]);
     store.toggleVisibility(refA);
     store.toggle(refA, "diff");
-    store.openTerminal(refA, "term-1");
+    store.openTerminal(refA, "term-1", "workspace-1");
     store.closeSurface(refA, "terminal:term-1");
     expect(useClosedViewStore.getState().entries).toMatchObject([
       { kind: "panel-tab", threadRef: refA, surface: { id: "file:src/app.ts" } },
@@ -261,7 +261,7 @@ describe("rightPanelStore", () => {
     { choice: "browser", choose: () => useRightPanelStore.getState().openBrowser(refA, "tab-a") },
     {
       choice: "terminal",
-      choose: () => useRightPanelStore.getState().openTerminal(refA, "term-1"),
+      choose: () => useRightPanelStore.getState().openTerminal(refA, "term-1", "workspace-1"),
     },
     {
       choice: "same tab",
@@ -274,7 +274,7 @@ describe("rightPanelStore", () => {
       choice: "terminal close",
       choose: () => {
         const store = useRightPanelStore.getState();
-        store.openTerminal(refA, "term-1");
+        store.openTerminal(refA, "term-1", "workspace-1");
         store.closeTerminal(refA, "terminal:term-1", "term-1");
       },
     },
@@ -1098,12 +1098,13 @@ describe("rightPanelStore", () => {
   });
 
   it("tracks split panes and the active pane within a terminal surface", () => {
-    useRightPanelStore.getState().openTerminal(refA, "term-1");
+    useRightPanelStore.getState().openTerminal(refA, "term-1", "workspace-1");
     useRightPanelStore.getState().splitTerminal(refA, "terminal:term-1", "term-2");
 
     expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
       id: "terminal:term-1",
       kind: "terminal",
+      workspaceId: "workspace-1",
       resourceId: "term-1",
       terminalIds: ["term-1", "term-2"],
       activeTerminalId: "term-2",
@@ -1114,6 +1115,7 @@ describe("rightPanelStore", () => {
     expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
       id: "terminal:term-1",
       kind: "terminal",
+      workspaceId: "workspace-1",
       resourceId: "term-1",
       terminalIds: ["term-2"],
       activeTerminalId: "term-2",
@@ -1121,7 +1123,7 @@ describe("rightPanelStore", () => {
   });
 
   it("closing the final terminal pane removes its surface and closes the panel", () => {
-    useRightPanelStore.getState().openTerminal(refA, "term-1");
+    useRightPanelStore.getState().openTerminal(refA, "term-1", "workspace-1");
     useRightPanelStore.getState().closeTerminal(refA, "terminal:term-1", "term-1");
 
     expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
@@ -1133,7 +1135,7 @@ describe("rightPanelStore", () => {
 
   it("closing the active surface activates a neighboring surface", () => {
     useRightPanelStore.getState().openBrowser(refA, "tab-a");
-    useRightPanelStore.getState().openTerminal(refA, "term-1");
+    useRightPanelStore.getState().openTerminal(refA, "term-1", "workspace-1");
     useRightPanelStore.getState().closeSurface(refA, "terminal:term-1");
 
     expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)?.id).toBe(
@@ -1144,7 +1146,7 @@ describe("rightPanelStore", () => {
   it("closing surfaces to the right activates the selected surface when active was removed", () => {
     useRightPanelStore.getState().openBrowser(refA, "tab-a");
     useRightPanelStore.getState().openFile(refA, "src/index.ts");
-    useRightPanelStore.getState().openTerminal(refA, "term-1");
+    useRightPanelStore.getState().openTerminal(refA, "term-1", "workspace-1");
 
     useRightPanelStore.getState().closeSurfacesToRight(refA, "browser:tab-a");
 
@@ -1183,7 +1185,7 @@ describe("rightPanelStore", () => {
 
   it("moves a surface to a new index and keeps it there through browser reconciliation", () => {
     const store = useRightPanelStore.getState();
-    store.openTerminal(refA, "term-1");
+    store.openTerminal(refA, "term-1", "workspace-1");
     store.openBrowser(refA, "tab-a");
     store.open(refA, "diff");
     const revision = store.getUserActionRevision(refA);

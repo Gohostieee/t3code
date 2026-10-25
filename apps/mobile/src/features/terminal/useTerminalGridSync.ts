@@ -3,7 +3,6 @@ import {
   AuthTerminalOperateScope,
   type EnvironmentId,
   type TerminalResizeInput,
-  type ThreadId,
 } from "@t3tools/contracts";
 import { useEffect } from "react";
 
@@ -12,7 +11,7 @@ import { readEnvironmentScope } from "../../state/session";
 
 export function useTerminalGridSync({
   environmentId,
-  threadId,
+  workspaceId,
   terminalId,
   canOperate,
   terminal,
@@ -20,10 +19,10 @@ export function useTerminalGridSync({
   resize,
 }: {
   readonly environmentId: EnvironmentId | null;
-  readonly threadId: ThreadId | null;
+  readonly workspaceId: string | null;
   readonly terminalId: string;
   readonly canOperate: boolean;
-  readonly terminal: Pick<TerminalSessionState, "output" | "status" | "version">;
+  readonly terminal: Pick<TerminalSessionState, "output" | "status" | "version" | "summary">;
   readonly size: TerminalGridSize;
   readonly resize: (target: {
     readonly environmentId: EnvironmentId;
@@ -39,13 +38,28 @@ export function useTerminalGridSync({
     if (
       generation === null ||
       environmentId === null ||
-      threadId === null ||
+      workspaceId === null ||
       !readEnvironmentScope(environmentId, AuthTerminalOperateScope)
     )
       return;
     resize({
       environmentId,
-      input: { threadId, terminalId, cols: size.cols, rows: size.rows },
+      input: {
+        workspaceId,
+        terminalId,
+        generation: terminal.summary?.generation,
+        cols: size.cols,
+        rows: size.rows,
+      },
     });
-  }, [environmentId, generation, resize, size.cols, size.rows, terminalId, threadId]);
+  }, [
+    environmentId,
+    generation,
+    resize,
+    size.cols,
+    size.rows,
+    terminalId,
+    workspaceId,
+    terminal.summary?.generation,
+  ]);
 }

@@ -86,7 +86,7 @@ describe("terminal output window", () => {
 
 const output = (data: string): TerminalAttachStreamEvent => ({
   type: "output",
-  threadId: "thread-1",
+  workspaceId: "thread-1",
   terminalId: "default",
   data,
 });
@@ -94,7 +94,7 @@ const output = (data: string): TerminalAttachStreamEvent => ({
 const snapshot = (history: string): TerminalAttachStreamEvent => ({
   type: "snapshot",
   snapshot: {
-    threadId: "thread-1",
+    workspaceId: "thread-1",
     terminalId: "default",
     cwd: "/repo",
     worktreePath: null,

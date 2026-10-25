@@ -175,7 +175,11 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.vcsListRefs]: AuthOrchestrationReadScope,
   [WS_METHODS.reviewGetDiffPreview]: AuthFilesystemReadScope,
   [WS_METHODS.reviewGetDiffFileContents]: AuthFilesystemReadScope,
+  [WS_METHODS.terminalRunTask]: AuthTerminalOperateScope,
   [WS_METHODS.terminalOpen]: AuthTerminalOperateScope,
+  [WS_METHODS.terminalLegacyHistory]: AuthTerminalReadScope,
+  [WS_METHODS.terminalListWorkspaces]: AuthTerminalReadScope,
+  [WS_METHODS.terminalResolveWorkspace]: AuthTerminalReadScope,
   [WS_METHODS.terminalAttach]: AuthTerminalOperateScope,
   [WS_METHODS.terminalObserve]: AuthTerminalReadScope,
   [WS_METHODS.terminalWrite]: AuthTerminalOperateScope,
@@ -283,7 +287,14 @@ export const layer = (
 ) =>
   Layer.succeed(RpcScopeAuthorization)((effect, { rpc, payload }) => {
     const requiredScopes = requiredScopesForRpcCall(rpc._tag, payload);
-    const requiredScope = requiredScopes.find((scope) => !scopes.includes(scope));
+    const requiredScope = requiredScopes.find(
+      (scope) =>
+        !scopes.includes(scope) &&
+        !(
+          rpc._tag === WS_METHODS.terminalResolveWorkspace &&
+          scopes.includes(AuthTerminalOperateScope)
+        ),
+    );
     if (requiredScope !== undefined) return Effect.fail(rpcAuthorizationError(requiredScope));
     return onAuthorized === undefined
       ? effect

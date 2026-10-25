@@ -14,6 +14,7 @@ import {
   EnvironmentId,
   type ScopedThreadRef,
   ThreadId,
+  TerminalWorkspaceError,
   sessionGrantsScope,
 } from "@t3tools/contracts";
 import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
@@ -50,7 +51,6 @@ import {
 } from "../state/entities";
 import { useUiStateStore } from "../uiStateStore";
 import { clearThreadPreviewState } from "../previewStateStore";
-import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
@@ -305,7 +305,6 @@ export function useThreadActions() {
   const clearProjectDraftThreadById = useComposerDraftStore(
     (store) => store.clearProjectDraftThreadById,
   );
-  const clearTerminalUiState = useTerminalUiStateStore((state) => state.clearTerminalUiState);
   const markThreadVisited = useUiStateStore((state) => state.markThreadVisited);
   const router = useRouter();
   const handleNewThread = useNewThreadHandler();
@@ -536,7 +535,6 @@ export function useThreadActions() {
       scopeProjectRef(threadRef.environmentId, thread.projectId),
       threadRef,
     );
-    clearTerminalUiState(threadRef);
     clearThreadPreviewState(threadRef);
 
     if (shouldNavigateToFallback) {
@@ -560,7 +558,7 @@ export function useThreadActions() {
       return deleteResult;
     }
 
-    const removeResult = readEnvironmentScope(threadRef.environmentId, AuthSourceControlWriteScope)
+    let removeResult = readEnvironmentScope(threadRef.environmentId, AuthSourceControlWriteScope)
       ? await removeWorktree({
           environmentId: threadRef.environmentId,
           input: {
@@ -577,6 +575,29 @@ export function useThreadActions() {
             }),
           ),
         );
+    if (removeResult._tag === "Failure") {
+      const error = squashAtomCommandFailure(removeResult);
+      if (Schema.is(TerminalWorkspaceError)(error) && error.sessions?.length) {
+        const confirmed = await readLocalApi()?.dialogs.confirm(
+          `${error.message}\n\n${error.sessions.map((session) => session.label ?? session.terminalId).join("\n")}\n\nTerminate these shared sessions and remove the worktree?`,
+          { variant: "destructive" },
+        );
+        if (
+          confirmed &&
+          readEnvironmentScope(threadRef.environmentId, AuthSourceControlWriteScope)
+        ) {
+          removeResult = await removeWorktree({
+            environmentId: threadRef.environmentId,
+            input: {
+              cwd: threadProject.workspaceRoot,
+              path: orphanedWorktreePath,
+              force: true,
+              confirmedTerminalSessions: error.sessions,
+            },
+          });
+        } else return deleteResult;
+      }
+    }
     const refreshResult =
       removeResult._tag === "Success"
         ? await refreshVcsStatus({

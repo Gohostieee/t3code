@@ -5,6 +5,9 @@ import {
 } from "@t3tools/shared/composerContextReferences";
 
 export interface TerminalContextSelection {
+  environmentId?: string;
+  workspaceId?: string;
+  cwd?: string;
   terminalId: string;
   terminalLabel: string;
   lineStart: number;
@@ -65,6 +68,9 @@ function normalizeTerminalContextSelection(
   const lineStart = Math.max(1, Math.floor(selection.lineStart));
   const lineEnd = Math.max(lineStart, Math.floor(selection.lineEnd));
   return {
+    ...(selection.environmentId ? { environmentId: selection.environmentId } : {}),
+    ...(selection.workspaceId ? { workspaceId: selection.workspaceId } : {}),
+    ...(selection.cwd ? { cwd: selection.cwd } : {}),
     terminalId,
     terminalLabel,
     lineStart,
