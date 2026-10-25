@@ -230,6 +230,7 @@ export interface OrchestrationIntegrationHarness {
 interface MakeOrchestrationIntegrationHarnessOptions {
   readonly provider?: ProviderDriverKind;
   readonly realCodex?: boolean;
+  readonly startCodebase?: boolean;
 }
 
 export const makeOrchestrationIntegrationHarness = (
@@ -403,10 +404,10 @@ export const makeOrchestrationIntegrationHarness = (
     );
     const layer = Layer.empty.pipe(
       Layer.provideMerge(CodebaseService.layer.pipe(Layer.provide(CodebaseArtifactStore.layer))),
-      Layer.provideMerge(VcsProcess.layer),
-      Layer.provideMerge(ProcessRunner.layer),
       Layer.provideMerge(runtimeServicesLayer),
       Layer.provideMerge(orchestrationReactorLayer),
+      Layer.provideMerge(VcsProcess.layer),
+      Layer.provideMerge(ProcessRunner.layer),
       Layer.provideMerge(providerRegistryLayer),
       Layer.provide(persistenceLayer),
       Layer.provideMerge(RepositoryIdentityResolver.layer),
@@ -450,9 +451,10 @@ export const makeOrchestrationIntegrationHarness = (
     yield* tryRuntimePromise("start OrchestrationReactor", () =>
       runtime.runPromise(reactor.start().pipe(Scope.provide(scope))),
     ).pipe(Effect.orDie);
-    yield* tryRuntimePromise("start CodebaseService", () =>
-      runtime.runPromise(codebase.start().pipe(Scope.provide(scope))),
-    ).pipe(Effect.orDie);
+    if (options?.startCodebase !== false)
+      yield* tryRuntimePromise("start CodebaseService", () =>
+        runtime.runPromise(codebase.start().pipe(Scope.provide(scope))),
+      ).pipe(Effect.orDie);
     const receiptHistory = yield* Ref.make<ReadonlyArray<OrchestrationRuntimeReceipt>>([]);
     yield* Stream.runForEach(runtimeReceiptBus.streamEventsForTest, (receipt) =>
       Ref.update(receiptHistory, (history) => [...history, receipt]).pipe(Effect.asVoid),

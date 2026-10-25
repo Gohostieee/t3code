@@ -181,17 +181,19 @@ function Explorer({
   const revision = codebaseProgressRevision(progress.data);
   useEffect(() => {
     refresh.current();
-  }, [revision]);
+  }, [revision, scope.id]);
   useEffect(() => {
     scroll.current?.scrollTo({ y: offsets.current.get(scope.id) ?? 0, animated: false });
   }, [scope.id, map.data?.scope?.scopeId]);
   const chosen = resolveCodebaseAnalyzer({
     analyzers: map.data?.manifest?.analyzers ?? {},
-    passKind: scope.parent ? "detail" : "overview",
+    passKind: (map.data?.scope?.parentScopeId ?? scope.parent) ? "detail" : "overview",
     providers,
     chatDefault: project.defaultModelSelection,
     binding:
-      map.data?.analyzerBindings?.[scope.parent ? "detail" : "overview"] ??
+      map.data?.analyzerBindings?.[
+        (map.data?.scope?.parentScopeId ?? scope.parent) ? "detail" : "overview"
+      ] ??
       map.data?.analyzerBindings?.default ??
       progress.data?.runs[0]?.modelSelection,
     override,
@@ -553,7 +555,8 @@ function Explorer({
             <Text className="text-xs text-foreground-muted">
               {map.data.scope.coverage.referencedFiles} files referenced of{" "}
               {map.data.scope.coverage.inventoryFiles} inventoried;{" "}
-              {map.data.scope.coverage.omittedFiles} omitted. Produced by{" "}
+              {map.data.scope.coverage.omittedFiles} not supplied;{" "}
+              {map.data.scope.coverage.truncatedFiles ?? 0} excerpts truncated. Produced by{" "}
               {map.data.scope.provenance.analyzer.model}.
             </Text>
             {graph?.omissions.map((item) => (
@@ -604,6 +607,12 @@ function Transcript({ threadRef, close }: { threadRef: ScopedThreadRef; close: (
               </Text>
             </View>
           ))}
+        {thread?.activities.map((activity) => (
+          <View key={activity.id} className="gap-1">
+            <Text className="font-t3-bold">{activity.kind}</Text>
+            <Text>{activity.summary}</Text>
+          </View>
+        ))}
       </ScrollView>
     </Modal>
   );

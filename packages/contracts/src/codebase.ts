@@ -139,6 +139,7 @@ export const CodebaseScope = Schema.Struct({
   coverage: Schema.Struct({
     inventoryFiles: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
     referencedFiles: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    truncatedFiles: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
     omittedFiles: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   }),
   provenance: Schema.Struct({ analyzer: CodebaseAnalyzer, promptVersion: Schema.Literal(1) }),

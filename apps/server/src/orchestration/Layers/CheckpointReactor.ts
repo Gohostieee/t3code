@@ -162,7 +162,11 @@ const make = Effect.gen(function* () {
   const resolveThreadDetail = Effect.fn("resolveThreadDetail")(function* (threadId: ThreadId) {
     return yield* projectionSnapshotQuery
       .getThreadDetailById(threadId)
-      .pipe(Effect.map(Option.getOrUndefined));
+      .pipe(
+        Effect.map((thread) =>
+          Option.isSome(thread) && !thread.value.analysis ? thread.value : undefined,
+        ),
+      );
   });
 
   const resolveThreadProjects = Effect.fn("resolveThreadProjects")(function* (

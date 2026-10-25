@@ -314,7 +314,7 @@ function CodebaseExplorer({
   mapRefresh.current = map.refresh;
   useEffect(() => {
     if (progress.data) mapRefresh.current();
-  }, [codebaseProgressRevision(progress.data)]);
+  }, [codebaseProgressRevision(progress.data), scope.id]);
   useEffect(() => {
     const element = viewport.current;
     const restored = positions.current.get(scope.id);
@@ -325,15 +325,23 @@ function CodebaseExplorer({
   }, [scope.id, map.data?.scope?.scopeId]);
   const chosen = resolveCodebaseAnalyzer({
     analyzers: map.data?.manifest?.analyzers ?? {},
-    passKind: scope.parent ? "detail" : "overview",
+    passKind: (map.data?.scope?.parentScopeId ?? scope.parent) ? "detail" : "overview",
     providers,
     chatDefault: project.defaultModelSelection,
     binding:
-      map.data?.analyzerBindings?.[scope.parent ? "detail" : "overview"] ??
+      map.data?.analyzerBindings?.[
+        (map.data?.scope?.parentScopeId ?? scope.parent) ? "detail" : "overview"
+      ] ??
       map.data?.analyzerBindings?.default ??
       progress.data?.runs[0]?.modelSelection,
     override,
   });
+  const supportReason =
+    chosen.selection &&
+    map.data?.supportedProviderInstanceIds &&
+    !map.data.supportedProviderInstanceIds.includes(chosen.selection.instanceId)
+      ? "This adapter cannot enforce inspection permissions. Choose a supported analyzer."
+      : null;
   const active = progress.data?.runs.find(
     (run) => run.analysis.scopeId === scope.id && isCodebaseAnalysisActive(run.analysis.status),
   );
@@ -477,7 +485,7 @@ function CodebaseExplorer({
             ? map.data.freshness === "current"
               ? "Current"
               : map.data.freshness === "stale"
-                ? "Source changed"
+                ? "Needs refresh"
                 : "Freshness unknown"
             : "Not built"}
         </span>
@@ -544,12 +552,24 @@ function CodebaseExplorer({
           </Button>
         </div>
       </div>
-      {(error ?? map.error ?? progress.error ?? chosen.reason ?? map.data?.detail) && (
+      {(error ??
+        map.error ??
+        progress.error ??
+        chosen.reason ??
+        supportReason ??
+        map.data?.detail) && (
         <div
           role="alert"
           className="flex items-center justify-between gap-4 border-b bg-muted/40 px-5 py-3 text-sm"
         >
-          <span>{error ?? map.error ?? progress.error ?? chosen.reason ?? map.data?.detail}</span>
+          <span>
+            {error ??
+              map.error ??
+              progress.error ??
+              chosen.reason ??
+              supportReason ??
+              map.data?.detail}
+          </span>
           <Button
             variant="ghost"
             size="sm"
@@ -570,8 +590,8 @@ function CodebaseExplorer({
       )}
       {map.data?.freshness === "stale" && (
         <p className="border-b px-5 py-2 text-xs text-muted-foreground">
-          This map describes an earlier source state. It remains readable; refresh this scope when
-          you’re ready.
+          Source or analysis settings have changed since this map was built. It remains readable;
+          refresh this scope when you’re ready.
         </p>
       )}
       <div className="flex min-h-0 flex-1">
@@ -715,7 +735,9 @@ function CodebaseExplorer({
         <details className="shrink-0 border-t px-5 py-2 text-xs text-muted-foreground">
           <summary>
             Coverage and omissions · {map.data?.scope?.coverage.referencedFiles} files referenced of{" "}
-            {map.data?.scope?.coverage.inventoryFiles} inventoried
+            {map.data?.scope?.coverage.inventoryFiles} inventoried;{" "}
+            {map.data?.scope?.coverage.omittedFiles} not supplied,{" "}
+            {map.data?.scope?.coverage.truncatedFiles ?? 0} excerpts truncated
           </summary>
           <ul className="mt-2 list-disc pl-5">
             {graph.omissions.map((omission) => (

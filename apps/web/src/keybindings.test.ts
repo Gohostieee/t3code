@@ -1,4 +1,5 @@
 import { assert, describe, it } from "vite-plus/test";
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 
 import {
   type KeybindingCommand,
@@ -476,6 +477,28 @@ describe("model picker navigation helpers", () => {
 });
 
 describe("chat/editor shortcuts", () => {
+  it("opens the codebase without shadowing the model picker in shipped defaults", () => {
+    for (const platform of ["Win32", "MacIntel"]) {
+      const modifier = platform === "MacIntel" ? { metaKey: true } : { ctrlKey: true };
+      assert.strictEqual(
+        resolveShortcutCommand(
+          event({ key: "m", ...modifier, altKey: true }),
+          DEFAULT_RESOLVED_KEYBINDINGS,
+          { platform },
+        ),
+        "codebase.open",
+      );
+      assert.strictEqual(
+        resolveShortcutCommand(
+          event({ key: "m", ...modifier, shiftKey: true }),
+          DEFAULT_RESOLVED_KEYBINDINGS,
+          { platform },
+        ),
+        "modelPicker.toggle",
+      );
+    }
+  });
+
   it("matches chat.new shortcut", () => {
     assert.isTrue(
       isChatNewShortcut(event({ key: "o", metaKey: true, shiftKey: true }), DEFAULT_BINDINGS, {

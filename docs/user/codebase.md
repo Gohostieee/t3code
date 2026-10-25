@@ -1,6 +1,6 @@
 # Explore your codebase
 
-Open **Codebase** in the sidebar to see how a project's systems fit together. The chat header, command palette, and **Open codebase** keybinding lead to the same workspace. The default shortcut is Ctrl+Shift+M (Command+Shift+M on macOS). You can explore without creating a conversation.
+Open **Codebase** in the sidebar to see how a project's systems fit together. The chat header, command palette, and **Open codebase** keybinding lead to the same workspace. The default shortcut is Ctrl+Alt+M (Command+Option+M on macOS). You can explore without creating a conversation.
 
 Check the project, checkout, and branch above the map. Opening from a conversation selects its worktree. Choose another existing checkout to explore that checkout's files. A worktree draft must be provisioned before it can be analyzed.
 
@@ -26,7 +26,7 @@ Currently, Codex supports codebase analysis. Other adapters are unavailable for 
 
 **Analysis activity** shows queued, running, waiting, validating, saving, and terminal attempts. **View transcript** opens the attempt's source input, response, and provider activity. These attempts do not appear in your conversation list.
 
-Cancel stops a pending attempt without removing the last accepted map. After a result has been saved, cancellation reports it as complete. A disconnected client can reconnect to the same durable attempt. After a server restart, an unfinished attempt reports failure and requires an explicit retry; T3 does not automatically start another paid pass.
+Cancel stops a pending attempt without removing the last accepted map. After a result has been saved, cancellation reports it as complete. A disconnected client can reconnect to the same durable attempt. After a server restart, a completed response may finish saving if its inputs are unchanged. Unfinished provider work requires an explicit retry. A map removed or changed after saving began is preserved. T3 does not automatically start another paid pass.
 
 ## Keep maps with your source
 

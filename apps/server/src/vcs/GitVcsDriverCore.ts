@@ -2956,7 +2956,15 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       withListRefsInvalidation(input.cwd, fetchRemoteTrackingBranch(input)),
     setBranchUpstream: (input) => withListRefsInvalidation(input.cwd, setBranchUpstream(input)),
     removeWorktree: (input) =>
-      withListRefsInvalidation(input.cwd, coordinateCheckout(input.path, removeWorktree(input))),
+      withListRefsInvalidation(
+        input.cwd,
+        fileSystem.exists(input.path).pipe(
+          Effect.orElseSucceed(() => false),
+          Effect.flatMap((exists) =>
+            exists ? coordinateCheckout(input.path, removeWorktree(input)) : removeWorktree(input),
+          ),
+        ),
+      ),
     renameBranch: (input) =>
       withListRefsInvalidation(input.cwd, coordinateCheckout(input.cwd, renameBranch(input))),
     createRef: (input) => withListRefsInvalidation(input.cwd, createRef(input)),

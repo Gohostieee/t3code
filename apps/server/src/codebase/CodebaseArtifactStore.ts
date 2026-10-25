@@ -1,5 +1,12 @@
+import { createSourceFingerprint } from "./CodebaseFingerprint.ts";
+import {
+  buildCodebaseInput,
+  codebaseSourcePriority,
+  isExcludedCodebaseSource,
+} from "./CodebaseInput.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFSP from "node:fs/promises";
+import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeCrypto from "node:crypto";
 import {
@@ -23,36 +30,26 @@ import * as Schema from "effect/Schema";
 import { withCheckoutLock } from "../vcs/CheckoutLock.ts";
 import { VcsProcess } from "../vcs/VcsProcess.ts";
 
+const isScopeId = Schema.is(CodebaseScopeId);
+const isCodebaseError = Schema.is(CodebaseError);
 const digest = (value: string | Buffer) =>
   NodeCrypto.createHash("sha256").update(value).digest("hex");
+async function sourceFileDigest(path: string) {
+  const hash = createSourceFingerprint();
+  for await (const chunk of NodeFS.createReadStream(path)) hash.update(chunk);
+  return hash.digest();
+}
 const error = (code: CodebaseError["code"], message: string) =>
   new CodebaseError({ code, message });
 const io = <A>(run: () => Promise<A>) =>
   Effect.tryPromise({
     try: run,
-    catch: (cause) => (Schema.is(CodebaseError)(cause) ? cause : error("io", String(cause))),
+    catch: (cause) => (isCodebaseError(cause) ? cause : error("io", String(cause))),
   });
 const serialize = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 export const codebaseDocumentRevision = (document: CodebaseScope) => digest(serialize(document));
 const isMissing = (cause: unknown) =>
   typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT";
-const excluded =
-  /(^|\/)(node_modules|vendor|dist|build|coverage|\.git|\.t3|\.t3-codebase|\.next|\.cache|\.repos|target)(\/|$)|(^|\/)\.env(?:\.|$)|\.(png|jpe?g|gif|webp|ico|pdf|woff2?|ttf|mp[34]|zip|sqlite(?:-wal|-shm)?)$/i;
-
-export function codebaseSourcePriority(path: string, focusPaths: ReadonlyArray<string>) {
-  if (
-    focusPaths.some(
-      (source) => path === source || path.startsWith(`${NodePath.posix.dirname(source)}/`),
-    )
-  )
-    return -1;
-  if (/^(package.json|README.md|Cargo.toml|pyproject.toml|[^/]*config[^/]*)$/.test(path)) return 0;
-  if (/(^|\/)(package.json|Cargo.toml|pyproject.toml)$/.test(path)) return 1;
-  if (/\/(src\/)?(index|main|App|server|router|routes)\.[tj]sx?$/.test(path)) return 2;
-  if (/\/src\//.test(path) && !/\.(test|spec)\./.test(path)) return 3;
-  return 4;
-}
-
 export interface CodebaseBinding {
   readonly checkout: string;
   readonly gitDirectory: string;
@@ -68,10 +65,18 @@ export interface CodebaseBinding {
   readonly configurationFingerprint: string;
   readonly inventory: ReadonlyArray<{ path: string; fingerprint: string; text: string | null }>;
   readonly omittedFiles: number;
+  readonly focus: CodebaseNode | null;
+  readonly previousScope: CodebaseScope | null;
+  readonly parentNodes: ReadonlyArray<CodebaseNode>;
   readonly previousNodes: ReadonlyArray<CodebaseNode>;
 }
 
-async function safePath(checkout: string, relative: string, create = false) {
+async function safePath(
+  checkout: string,
+  relative: string,
+  create = false,
+  checkedParents?: Set<string>,
+) {
   const parts = relative.split("/");
   if (parts.some((part) => !part || part === ".." || part === "." || /[:\\\0]/.test(part))) {
     throw error("invalid", "Invalid project-relative path.");
@@ -91,10 +96,12 @@ async function safePath(checkout: string, relative: string, create = false) {
         )
           throw cause;
       });
+    if (index < parts.length - 1 && checkedParents?.has(current)) continue;
     const stat = await NodeFSP.lstat(current).catch((cause) => {
       if (isMissing(cause)) return null;
       throw cause;
     });
+    if (stat?.isDirectory() && index < parts.length - 1) checkedParents?.add(current);
     if (stat?.isSymbolicLink())
       throw error(
         "invalid",
@@ -125,29 +132,27 @@ async function readText(checkout: string, relative: string) {
   }
 }
 const scopeFile = (scopeId: string) => {
-  if (!Schema.is(CodebaseScopeId)(scopeId)) throw error("invalid", "Invalid scope identity.");
+  if (!isScopeId(scopeId)) throw error("invalid", "Invalid scope identity.");
   return `${CODEBASE_DIRECTORY}/scopes/${scopeId}.json`;
 };
 const manifestFile = `${CODEBASE_DIRECTORY}/manifest.json`;
 const revision = (text: string | null) => (text === null ? null : digest(text));
+const decodeVersionEnvelope = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.Struct({ version: Schema.optional(Schema.Number) })),
+);
 const decode = <S extends Schema.ConstraintDecoder<unknown>>(
   schema: S,
   text: string,
 ): S["Type"] => {
   try {
-    const version: unknown = JSON.parse(text);
-    if (
-      typeof version === "object" &&
-      version !== null &&
-      "version" in version &&
-      version.version !== 1
-    )
+    const envelope = decodeVersionEnvelope(text);
+    if (envelope.version !== undefined && envelope.version !== 1)
       throw error("unsupported", "This map schema is not supported by this version of T3 Code.");
     return Schema.decodeUnknownSync(Schema.fromJsonString(schema))(text, {
       onExcessProperty: "error",
     });
   } catch (cause) {
-    if (Schema.is(CodebaseError)(cause)) throw cause;
+    if (isCodebaseError(cause)) throw cause;
     throw error(
       "invalid",
       `Invalid map document: ${String(cause).slice(0, 800)}. Resolve the file or retry the analysis.`,
@@ -242,7 +247,9 @@ export class CodebaseArtifactStore extends Context.Service<
           "--",
           ".",
         ])).stdout.split("\0");
-        const files = [...new Set(paths.filter((path) => path && !excluded.test(path)))].sort();
+        const files = [
+          ...new Set(paths.filter((path) => path && !isExcludedCodebaseSource(path))),
+        ].sort();
         if (files.length > CODEBASE_LIMITS.sourceFiles)
           return yield* error(
             "unsupported",
@@ -263,42 +270,46 @@ export class CodebaseArtifactStore extends Context.Service<
         );
         const inventory = yield* io(async () => {
           let retainedBytes = 0;
+          const checkedParents = new Set<string>();
           const items: Array<{ path: string; fingerprint: string; text: string | null }> = [];
-          for (const path of files) {
-            let absolute: string;
-            try {
-              absolute = await safePath(checkout, path);
-            } catch (cause) {
-              if (!Schema.is(CodebaseError)(cause)) throw cause;
-              items.push({
-                path,
-                fingerprint: `symlink:${await NodeFSP.readlink(NodePath.join(checkout, path)).catch(() => "unavailable")}`,
-                text: null,
-              });
-              continue;
+          for (let offset = 0; offset < files.length; offset += 8) {
+            const batch = await Promise.all(
+              files.slice(offset, offset + 8).map(async (path) => {
+                let absolute: string;
+                try {
+                  absolute = await safePath(checkout, path, false, checkedParents);
+                } catch (cause) {
+                  if (!isCodebaseError(cause)) throw cause;
+                  return {
+                    path,
+                    fingerprint: `symlink:${await NodeFSP.readlink(NodePath.join(checkout, path)).catch(() => "unavailable")}`,
+                    text: null,
+                  };
+                }
+                const stat = await NodeFSP.stat(absolute).catch((cause) => {
+                  if (isMissing(cause)) return null;
+                  throw cause;
+                });
+                if (!stat) return { path, fingerprint: "deleted", text: null };
+                if (!stat.isFile()) return { path, fingerprint: "not-file", text: null };
+                if (stat.size > CODEBASE_LIMITS.sourceFileBytes)
+                  return { path, fingerprint: await sourceFileDigest(absolute), text: null };
+                const content = await NodeFSP.readFile(absolute);
+                const hash = createSourceFingerprint();
+                hash.update(content);
+                return {
+                  path,
+                  fingerprint: hash.digest(),
+                  text: content.includes(0) ? null : content.toString("utf8"),
+                };
+              }),
+            );
+            for (const item of batch) {
+              const bytes = item.text === null ? 0 : Buffer.byteLength(item.text);
+              const retain = retainedBytes + bytes <= 8 * 1024 * 1024;
+              items.push({ ...item, text: retain ? item.text : null });
+              if (retain) retainedBytes += bytes;
             }
-            const stat = await NodeFSP.stat(absolute).catch((cause) => {
-              if (isMissing(cause)) return null;
-              throw cause;
-            });
-            if (!stat) {
-              items.push({ path, fingerprint: "deleted", text: null });
-              continue;
-            }
-            if (!stat.isFile() || stat.size > CODEBASE_LIMITS.sourceFileBytes) {
-              items.push({ path, fingerprint: `omitted:${stat.size}:${stat.mtimeMs}`, text: null });
-              continue;
-            }
-            const content = await NodeFSP.readFile(absolute);
-            items.push({
-              path,
-              fingerprint: digest(content),
-              text:
-                content.includes(0) || retainedBytes + content.length > 8 * 1024 * 1024
-                  ? null
-                  : content.toString("utf8"),
-            });
-            if (items.at(-1)?.text !== null) retainedBytes += content.length;
           }
           return items.sort((a, b) => a.path.localeCompare(b.path));
         });
@@ -337,7 +348,10 @@ export class CodebaseArtifactStore extends Context.Service<
           projectPath: NodePath.relative(root, checkout).replaceAll("\\", "/") || ".",
           configurationFingerprint: digest(serialize(manifest?.analyzers ?? {})),
           inventory,
+          previousScope,
+          parentNodes: focus?.graph.nodes ?? [],
           previousNodes: previousScope?.graph.nodes ?? [],
+          focus: focus?.graph.nodes.find((node) => node.childScopeId === input.scopeId) ?? null,
           omittedFiles: inventory.filter((file) => file.text === null).length,
         } satisfies CodebaseBinding;
       });
@@ -457,10 +471,17 @@ export class CodebaseArtifactStore extends Context.Service<
           .replace(/^```(?:json)?\s*\n/, "")
           .replace(/\n```$/, "");
         const graph = yield* io(async () => decode(CodebaseGraph, json));
+        const bundle = buildCodebaseInput(binding);
         const sourceByPath = new Map(binding.inventory.map((file) => [file.path, file]));
         const reference = (source: CodebaseSource) => {
           const file = sourceByPath.get(source.path);
-          if (!file?.text || source.endLine > file.text.split("\n").length)
+          const excerpt = bundle.supplied.find((item) => item.path === source.path);
+          if (
+            !file?.text ||
+            !excerpt ||
+            source.startLine < excerpt.startLine ||
+            source.endLine > excerpt.endLine
+          )
             throw error(
               "invalid",
               `Invalid source anchor: ${source.path}:${source.startLine}-${source.endLine}`,
@@ -540,10 +561,20 @@ export class CodebaseArtifactStore extends Context.Service<
                   ...edges.flatMap((edge) => edge.sources),
                 ].map((source) => source.path),
               ).size,
-              omittedFiles: binding.omittedFiles,
+              omittedFiles: bundle.omittedFiles,
+              truncatedFiles: bundle.supplied.filter((file) => file.truncated).length,
             },
             provenance: { analyzer, promptVersion: 1 as const },
           };
+          const previous = binding.previousScope;
+          if (
+            previous &&
+            previous.sourceFingerprint === document.sourceFingerprint &&
+            previous.configurationFingerprint === document.configurationFingerprint &&
+            serialize(previous.graph) === serialize(document.graph) &&
+            serialize(previous.coverage) === serialize(document.coverage)
+          )
+            return previous;
           return decode(CodebaseScope, serialize(document));
         });
       });
@@ -619,7 +650,7 @@ export class CodebaseArtifactStore extends Context.Service<
           }),
         ).pipe(
           Effect.mapError((cause) =>
-            Schema.is(CodebaseError)(cause) ? cause : error("busy", cause.message),
+            isCodebaseError(cause) ? cause : error("busy", cause.message),
           ),
         );
       });
@@ -659,7 +690,7 @@ export class CodebaseArtifactStore extends Context.Service<
           }),
         ).pipe(
           Effect.mapError((cause) =>
-            Schema.is(CodebaseError)(cause) ? cause : error("busy", cause.message),
+            isCodebaseError(cause) ? cause : error("busy", cause.message),
           ),
         );
       });

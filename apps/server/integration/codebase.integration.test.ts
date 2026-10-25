@@ -19,6 +19,7 @@ import * as Deferred from "effect/Deferred";
 import {
   CommandId,
   ProjectId,
+  ThreadId,
   DEFAULT_MODEL,
   EventId,
   defaultInstanceIdForDriver,
@@ -48,6 +49,7 @@ it.live(
       git(root, "init", "-b", "main");
       git(root, "config", "user.name", "Codebase Test");
       git(root, "config", "user.email", "test@example.invalid");
+      git(root, "config", "core.autocrlf", "false");
       yield* Effect.promise(() =>
         NodeFSP.writeFile(NodePath.join(root, "app.ts"), "export const app = 1;\n"),
       );
@@ -138,7 +140,7 @@ it.live(
 );
 
 it.live(
-  "builds an overview through orchestration and exposes the accepted map without adding a conversation",
+  "accepts completed analysis without checkpoints and keeps it outside conversations",
   () =>
     Effect.gen(function* () {
       yield* Effect.scoped(
@@ -243,6 +245,9 @@ it.live(
               expect(
                 Option.isSome(terminal) ? terminal.value.runs[0]?.analysis : null,
               ).toMatchObject({ status: "succeeded" });
+              expect(
+                yield* harness.checkpointRepository.listByThreadId({ threadId: run.threadId }),
+              ).toHaveLength(0);
               const finish = (
                 text: string,
                 suffix: string,
@@ -416,12 +421,16 @@ it.live(
       git(root, "init", "-b", "main");
       git(root, "config", "user.name", "Codebase Test");
       git(root, "config", "user.email", "test@example.invalid");
+      git(root, "config", "core.autocrlf", "false");
       yield* Effect.promise(() => NodeFSP.mkdir(NodePath.join(root, "app")));
       yield* Effect.promise(() =>
         NodeFSP.writeFile(NodePath.join(root, "app", "index.ts"), "export const value = 1;\n"),
       );
       yield* Effect.promise(() =>
-        NodeFSP.writeFile(NodePath.join(root, "app", "deps.lock"), "version=1\n"),
+        NodeFSP.writeFile(
+          NodePath.join(root, "app", "deps.lock"),
+          "version=1\n" + "entry=1\n".repeat(150000),
+        ),
       );
       git(root, "add", ".");
       git(root, "commit", "-m", "source");
@@ -474,6 +483,7 @@ it.live(
           scopeId: "overview",
         });
         expect(portable.state).toBe("ready");
+        expect(portable.freshness).toBe("current");
         expect(portable.scope?.graph).toEqual(document.graph);
         const bound = yield* store.prepare({ checkout, scopeId: "overview", parentScopeId: null });
         git(root, "checkout", "--detach", sourceCommit);
@@ -513,4 +523,76 @@ it.live(
       }).pipe(Effect.provide(storeLayer));
     }),
   60_000,
+);
+
+it.live("does not republish a removed map when recovering a saving receipt", () =>
+  Effect.gen(function* () {
+    const harness = yield* makeOrchestrationIntegrationHarness({ startCodebase: false });
+    yield* Effect.gen(function* () {
+      const projectId = ProjectId.make("recovery-project");
+      const threadId = ThreadId.make("recovery-analysis");
+      const createdAt = "2026-10-25T00:00:00.000Z";
+      const selection = {
+        instanceId: defaultInstanceIdForDriver(ProviderDriverKind.make("codex")),
+        model: DEFAULT_MODEL,
+      };
+      yield* harness.engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("recovery-project"),
+        projectId,
+        title: "Recovery",
+        workspaceRoot: harness.workspaceDir,
+        createdAt,
+      });
+      const binding = yield* Effect.gen(function* () {
+        const store = yield* CodebaseArtifactStore;
+        yield* store.configure(harness.workspaceDir, null, {});
+        return yield* store.prepare({
+          checkout: harness.workspaceDir,
+          scopeId: "overview",
+          parentScopeId: null,
+        });
+      }).pipe(Effect.provide(storeLayer));
+      yield* harness.engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("recovery-create"),
+        threadId,
+        projectId,
+        title: "Codebase recovery",
+        modelSelection: selection,
+        runtimeMode: "approval-required",
+        interactionMode: "default",
+        branch: binding.gitBranch,
+        worktreePath: harness.workspaceDir,
+        createdAt,
+        analysis: {
+          requestId: CommandId.make("recovery-create"),
+          checkout: harness.workspaceDir,
+          scopeId: "overview",
+          parentScopeId: null,
+          passKind: "overview",
+          status: "saving",
+          expectedRevision: null,
+          configurationRevision: binding.configurationRevision,
+          parentRevision: null,
+          sourceFingerprint: binding.sourceFingerprint,
+          gitHead: binding.gitHead,
+          gitBranch: binding.gitBranch,
+          analyzer: { driverKind: ProviderDriverKind.make("codex"), model: DEFAULT_MODEL },
+          acceptedRevision: "previously-published-revision",
+          detail: null,
+          updatedAt: createdAt,
+        },
+      });
+      yield* harness.codebase.start();
+      const progress = yield* harness.codebase.status({ projectId });
+      expect(progress.runs[0]?.analysis.status).toBe("input-changed");
+      expect((yield* harness.codebase.read({ projectId, scopeId: "overview" })).state).toBe(
+        "unbuilt",
+      );
+      expect(
+        Option.getOrThrow(yield* harness.snapshotQuery.getThreadDetailById(threadId)).messages,
+      ).toHaveLength(0);
+    }).pipe(Effect.ensuring(harness.dispose));
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
