@@ -8,6 +8,8 @@ Build from this checkout after installing dependencies with `vp i`:
 ./scripts/build-t4-nightly.ps1
 ```
 
+The command builds the Rust resource helper with the installed MSVC toolchain, then uses the packaging pipeline's cached-helper path. Rust, the x64 MSVC tools, Windows SDK, and Python must be installed.
+
 The installer is written to `release/t4code`. Run it to install or replace the previous T4 nightly. An explicit version can be supplied with `-Version 0.1.2-nightly.20261025.1`.
 
 T4 stores server data in `%USERPROFILE%/.t4/userdata` and its Electron profile in `%APPDATA%/t4code`. `T4CODE_HOME` overrides its server base directory. Existing T3 data is not imported. The bundled launcher is `%USERPROFILE%/.t4/bin/t4code.cmd`.
