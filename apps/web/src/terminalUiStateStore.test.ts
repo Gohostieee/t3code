@@ -1,30 +1,33 @@
-import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
-import { ThreadId } from "@t3tools/contracts";
+import { scopedTerminalWorkspaceKey } from "@t3tools/client-runtime/environment";
+import { EnvironmentId } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
   migratePersistedTerminalUiStateStoreState,
-  selectThreadTerminalUiState,
+  selectWorkspaceTerminalUiState,
   useTerminalUiStateStore,
 } from "./terminalUiStateStore";
 import { DEFAULT_THREAD_TERMINAL_ID } from "./types";
 
-const THREAD_ID = ThreadId.make("thread-1");
-const THREAD_REF = scopeThreadRef("environment-a" as never, THREAD_ID);
-const OTHER_THREAD_REF = scopeThreadRef("environment-b" as never, THREAD_ID);
+const THREAD_ID = String("workspace-1");
+const THREAD_REF = { environmentId: EnvironmentId.make("environment-a"), workspaceId: THREAD_ID };
+const OTHER_THREAD_REF = {
+  environmentId: EnvironmentId.make("environment-b"),
+  workspaceId: THREAD_ID,
+};
 
 describe("terminalUiStateStore actions", () => {
   beforeEach(() => {
     useTerminalUiStateStore.persist.clearStorage();
     useTerminalUiStateStore.setState({
-      terminalUiStateByThreadKey: {},
-      suppressedTerminalIdsByThreadKey: {},
+      terminalUiStateByWorkspaceKey: {},
+      suppressedTerminalIdsByWorkspaceKey: {},
     });
   });
 
-  it("returns an empty default terminal UI state for unknown threads", () => {
-    const terminalUiState = selectThreadTerminalUiState(
-      useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+  it("returns an empty default terminal UI state for unknown workspaces", () => {
+    const terminalUiState = selectWorkspaceTerminalUiState(
+      useTerminalUiStateStore.getState().terminalUiStateByWorkspaceKey,
       THREAD_REF,
     );
     expect(terminalUiState).toEqual({
@@ -42,8 +45,8 @@ describe("terminalUiStateStore actions", () => {
     store.setTerminalOpen(THREAD_REF, true);
     store.splitTerminal(THREAD_REF, "terminal-2");
 
-    const terminalUiState = selectThreadTerminalUiState(
-      useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+    const terminalUiState = selectWorkspaceTerminalUiState(
+      useTerminalUiStateStore.getState().terminalUiStateByWorkspaceKey,
       THREAD_REF,
     );
     expect(terminalUiState.terminalOpen).toBe(true);
@@ -62,8 +65,8 @@ describe("terminalUiStateStore actions", () => {
     store.setTerminalOpen(THREAD_REF, true);
     store.splitTerminalVertical(THREAD_REF, "terminal-2");
 
-    const terminalUiState = selectThreadTerminalUiState(
-      useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+    const terminalUiState = selectWorkspaceTerminalUiState(
+      useTerminalUiStateStore.getState().terminalUiStateByWorkspaceKey,
       THREAD_REF,
     );
     expect(terminalUiState.terminalGroups).toEqual([
@@ -78,8 +81,8 @@ describe("terminalUiStateStore actions", () => {
   it("materializes the default terminal when opening an empty drawer", () => {
     useTerminalUiStateStore.getState().setTerminalOpen(THREAD_REF, true);
 
-    const terminalUiState = selectThreadTerminalUiState(
-      useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+    const terminalUiState = selectWorkspaceTerminalUiState(
+      useTerminalUiStateStore.getState().terminalUiStateByWorkspaceKey,
       THREAD_REF,
     );
     expect(terminalUiState).toEqual({
@@ -105,8 +108,8 @@ describe("terminalUiStateStore actions", () => {
     store.splitTerminal(THREAD_REF, "terminal-5");
     store.splitTerminal(THREAD_REF, "terminal-6");
 
-    const terminalUiState = selectThreadTerminalUiState(
-      useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+    const terminalUiState = selectWorkspaceTerminalUiState(
+      useTerminalUiStateStore.getState().terminalUiStateByWorkspaceKey,
       THREAD_REF,
     );
     expect(terminalUiState.terminalIds).toEqual([
@@ -126,8 +129,8 @@ describe("terminalUiStateStore actions", () => {
   it("creates new terminals in a separate group", () => {
     useTerminalUiStateStore.getState().newTerminal(THREAD_REF, "terminal-2");
 
-    const terminalUiState = selectThreadTerminalUiState(
-      useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+    const terminalUiState = selectWorkspaceTerminalUiState(
+      useTerminalUiStateStore.getState().terminalUiStateByWorkspaceKey,
       THREAD_REF,
     );
     expect(terminalUiState.terminalIds).toEqual(["terminal-2"]);
@@ -142,8 +145,8 @@ describe("terminalUiStateStore actions", () => {
     const store = useTerminalUiStateStore.getState();
     store.ensureTerminal(THREAD_REF, "setup-setup", { open: true, active: true });
 
-    const terminalUiState = selectThreadTerminalUiState(
-      useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+    const terminalUiState = selectWorkspaceTerminalUiState(
+      useTerminalUiStateStore.getState().terminalUiStateByWorkspaceKey,
       THREAD_REF,
     );
     expect(terminalUiState.terminalOpen).toBe(true);
@@ -154,30 +157,30 @@ describe("terminalUiStateStore actions", () => {
     ]);
   });
 
-  it("keeps state isolated per environment when raw thread ids collide", () => {
+  it("keeps state isolated per environment when raw workspace ids collide", () => {
     const store = useTerminalUiStateStore.getState();
     store.setTerminalOpen(THREAD_REF, true);
     store.newTerminal(OTHER_THREAD_REF, "env-b-terminal");
 
     expect(
-      selectThreadTerminalUiState(
-        useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+      selectWorkspaceTerminalUiState(
+        useTerminalUiStateStore.getState().terminalUiStateByWorkspaceKey,
         THREAD_REF,
       ).terminalOpen,
     ).toBe(true);
     expect(
-      selectThreadTerminalUiState(
-        useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+      selectWorkspaceTerminalUiState(
+        useTerminalUiStateStore.getState().terminalUiStateByWorkspaceKey,
         OTHER_THREAD_REF,
       ).terminalIds,
     ).toEqual(["env-b-terminal"]);
   });
 
-  it("drops persisted entries whose thread keys are not valid scoped keys", () => {
+  it("drops persisted entries whose workspace keys are not valid scoped keys", () => {
     const migrated = migratePersistedTerminalUiStateStoreState(
       {
-        terminalStateByThreadKey: {
-          [scopedThreadKey(THREAD_REF)]: {
+        terminalStateByWorkspaceKey: {
+          [scopedTerminalWorkspaceKey(THREAD_REF)]: {
             terminalOpen: true,
             terminalHeight: 320,
             terminalIds: ["term-1"],
@@ -185,7 +188,7 @@ describe("terminalUiStateStore actions", () => {
             terminalGroups: [{ id: "group-term-1", terminalIds: ["term-1"] }],
             activeTerminalGroupId: "group-term-1",
           },
-          "legacy-thread-id": {
+          "legacy-workspace-id": {
             terminalOpen: true,
             terminalHeight: 320,
             terminalIds: ["term-1"],
@@ -199,8 +202,8 @@ describe("terminalUiStateStore actions", () => {
     );
 
     expect(migrated).toEqual({
-      terminalUiStateByThreadKey: {
-        [scopedThreadKey(THREAD_REF)]: {
+      terminalUiStateByWorkspaceKey: {
+        [scopedTerminalWorkspaceKey(THREAD_REF)]: {
           terminalOpen: true,
           terminalHeight: 320,
           terminalIds: ["term-1"],
@@ -218,11 +221,13 @@ describe("terminalUiStateStore actions", () => {
     store.closeTerminal(THREAD_REF, "terminal-only");
 
     expect(
-      useTerminalUiStateStore.getState().terminalUiStateByThreadKey[scopedThreadKey(THREAD_REF)],
+      useTerminalUiStateStore.getState().terminalUiStateByWorkspaceKey[
+        scopedTerminalWorkspaceKey(THREAD_REF)
+      ],
     ).toBeUndefined();
     expect(
-      selectThreadTerminalUiState(
-        useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+      selectWorkspaceTerminalUiState(
+        useTerminalUiStateStore.getState().terminalUiStateByWorkspaceKey,
         THREAD_REF,
       ).terminalIds,
     ).toEqual([]);
@@ -234,8 +239,8 @@ describe("terminalUiStateStore actions", () => {
     store.splitTerminal(THREAD_REF, "terminal-3");
     store.closeTerminal(THREAD_REF, "terminal-3");
 
-    const terminalUiState = selectThreadTerminalUiState(
-      useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+    const terminalUiState = selectWorkspaceTerminalUiState(
+      useTerminalUiStateStore.getState().terminalUiStateByWorkspaceKey,
       THREAD_REF,
     );
     expect(terminalUiState.activeTerminalId).toBe("terminal-2");
@@ -250,8 +255,8 @@ describe("terminalUiStateStore actions", () => {
     store.setTerminalOpen(THREAD_REF, true);
     store.reconcileTerminalIds(THREAD_REF, ["term-a", "term-b"]);
 
-    const terminalUiState = selectThreadTerminalUiState(
-      useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+    const terminalUiState = selectWorkspaceTerminalUiState(
+      useTerminalUiStateStore.getState().terminalUiStateByWorkspaceKey,
       THREAD_REF,
     );
     expect(terminalUiState.terminalIds).toEqual(["term-a", "term-b"]);
@@ -270,22 +275,22 @@ describe("terminalUiStateStore actions", () => {
     store.reconcileTerminalIds(THREAD_REF, ["term-1", "term-2"]);
 
     expect(
-      selectThreadTerminalUiState(
-        useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+      selectWorkspaceTerminalUiState(
+        useTerminalUiStateStore.getState().terminalUiStateByWorkspaceKey,
         THREAD_REF,
       ).terminalIds,
     ).toEqual(["term-2"]);
 
     store.newTerminal(THREAD_REF, "term-1");
     expect(
-      selectThreadTerminalUiState(
-        useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+      selectWorkspaceTerminalUiState(
+        useTerminalUiStateStore.getState().terminalUiStateByWorkspaceKey,
         THREAD_REF,
       ).terminalIds,
     ).toEqual(["term-2", "term-1"]);
   });
 
-  it("is a no-op when clearing terminal UI state for a thread with no state", () => {
+  it("is a no-op when clearing terminal UI state for a workspace with no state", () => {
     const store = useTerminalUiStateStore.getState();
     const before = useTerminalUiStateStore.getState();
 

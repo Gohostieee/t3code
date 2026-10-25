@@ -1,15 +1,17 @@
 import { type TerminalSummary, WS_METHODS } from "@t3tools/contracts";
 import * as Stream from "effect/Stream";
+import * as Effect from "effect/Effect";
 import { Atom } from "effect/unstable/reactivity";
 
 import {
   createAtomCommandScheduler,
   createEnvironmentRpcCommand,
+  createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
   createEnvironmentSubscriptionAtomFamily,
 } from "./runtime.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
-import { subscribe, type EnvironmentRpcInput } from "../rpc/client.ts";
+import { request, subscribe, type EnvironmentRpcInput } from "../rpc/client.ts";
 import {
   applyTerminalAttachStreamEvent,
   applyTerminalMetadataStreamEvent,
@@ -21,26 +23,51 @@ export function createTerminalEnvironmentAtoms<R, E>(
 ) {
   const lifecycleScheduler = createAtomCommandScheduler();
   const resizeScheduler = createAtomCommandScheduler();
-  const terminalThreadKey = ({
+  const terminalWorkspaceKey = ({
     environmentId,
     input,
   }: {
     readonly environmentId: string;
-    readonly input: { readonly threadId: string; readonly terminalId?: string | undefined };
-  }) => JSON.stringify([environmentId, input.threadId]);
+    readonly input: { readonly workspaceId: string; readonly terminalId?: string | undefined };
+  }) => JSON.stringify([environmentId, input.workspaceId]);
   const terminalSessionKey = ({
     environmentId,
     input,
   }: {
     readonly environmentId: string;
-    readonly input: { readonly threadId: string; readonly terminalId?: string | undefined };
-  }) => JSON.stringify([environmentId, input.threadId, input.terminalId ?? null]);
-  const lifecycleConcurrency = { mode: "serial" as const, key: terminalThreadKey };
+    readonly input: { readonly workspaceId: string; readonly terminalId?: string | undefined };
+  }) => JSON.stringify([environmentId, input.workspaceId, input.terminalId ?? null]);
+  const lifecycleConcurrency = { mode: "serial" as const, key: terminalWorkspaceKey };
   return {
+    resolve: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:terminal:resolve",
+      tag: WS_METHODS.terminalResolveWorkspace,
+    }),
+    legacyHistory: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:terminal:legacy-history",
+      tag: WS_METHODS.terminalLegacyHistory,
+    }),
+    workspaces: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:terminal:workspaces",
+      tag: WS_METHODS.terminalListWorkspaces,
+    }),
+    resolveWorkspace: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:terminal:workspace",
+      tag: WS_METHODS.terminalResolveWorkspace,
+    }),
     attach: createEnvironmentSubscriptionAtomFamily(runtime, {
       label: "environment-data:terminal:attach",
       subscribe: (input: EnvironmentRpcInput<typeof WS_METHODS.terminalAttach>) =>
         subscribe(WS_METHODS.terminalAttach, input).pipe(
+          Stream.catchTag("TerminalSessionLookupError", (error) =>
+            input.cwd
+              ? Stream.unwrap(
+                  request(WS_METHODS.terminalOpen, { ...input, cwd: input.cwd }).pipe(
+                    Effect.as(subscribe(WS_METHODS.terminalAttach, input)),
+                  ),
+                )
+              : Stream.fail(error),
+          ),
           Stream.scan(EMPTY_TERMINAL_BUFFER_STATE, applyTerminalAttachStreamEvent),
         ),
     }),
@@ -54,6 +81,12 @@ export function createTerminalEnvironmentAtoms<R, E>(
         subscribe(WS_METHODS.subscribeTerminalMetadata, {}).pipe(
           Stream.scan([] as ReadonlyArray<TerminalSummary>, applyTerminalMetadataStreamEvent),
         ),
+    }),
+    runTask: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:terminal:task",
+      tag: WS_METHODS.terminalRunTask,
+      scheduler: lifecycleScheduler,
+      concurrency: lifecycleConcurrency,
     }),
     open: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:terminal:open",

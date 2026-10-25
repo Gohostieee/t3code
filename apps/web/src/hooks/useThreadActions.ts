@@ -5,7 +5,12 @@ import {
 } from "@t3tools/client-runtime/environment";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { canSettle, canSnooze } from "@t3tools/client-runtime/state/thread-settled";
-import { EnvironmentId, type ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  type ScopedThreadRef,
+  TerminalWorkspaceError,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/unstable/reactivity";
@@ -14,7 +19,6 @@ import { useCallback, useMemo, useRef } from "react";
 
 import { getFallbackThreadIdAfterDelete } from "../components/Sidebar.logic";
 import { useComposerDraftStore } from "../composerDraftStore";
-import { terminalEnvironment } from "../state/terminal";
 import { threadEnvironment } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
 import { useNewThreadHandler } from "./useHandleNewThread";
@@ -27,12 +31,14 @@ import {
   readProject,
   readThreadShell,
 } from "../state/entities";
-import { useTerminalUiStateStore } from "../terminalUiStateStore";
+
 import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { useClientSettings } from "./useSettings";
 import { useAtomCommand } from "../state/use-atom-command";
+
+const isTerminalWorkspaceError = Schema.is(TerminalWorkspaceError);
 
 export class ThreadArchiveBlockedError extends Schema.TaggedErrorClass<ThreadArchiveBlockedError>()(
   "ThreadArchiveBlockedError",
@@ -95,7 +101,6 @@ export class ThreadSnoozeBlockedError extends Schema.TaggedErrorClass<ThreadSnoo
 }
 
 export function useThreadActions() {
-  const closeTerminal = useAtomCommand(terminalEnvironment.close);
   const archiveThreadMutation = useAtomCommand(threadEnvironment.archive, {
     reportFailure: false,
   });
@@ -130,7 +135,7 @@ export function useThreadActions() {
   const clearProjectDraftThreadById = useComposerDraftStore(
     (store) => store.clearProjectDraftThreadById,
   );
-  const clearTerminalUiState = useTerminalUiStateStore((state) => state.clearTerminalUiState);
+
   const router = useRouter();
   const handleNewThread = useNewThreadHandler();
   // Keep a ref so archiveThread can call handleNewThread without appearing in
@@ -284,11 +289,6 @@ export function useThreadActions() {
         });
       }
 
-      await closeTerminal({
-        environmentId: threadRef.environmentId,
-        input: { threadId: threadRef.threadId, deleteHistory: true },
-      });
-
       const deletedThreadIds = deletedIds ?? new Set<ThreadId>();
       const currentRouteThreadRef = getCurrentRouteThreadRef();
       const shouldNavigateToFallback =
@@ -313,7 +313,6 @@ export function useThreadActions() {
         scopeProjectRef(threadRef.environmentId, thread.projectId),
         threadRef,
       );
-      clearTerminalUiState(threadRef);
 
       if (shouldNavigateToFallback) {
         if (fallbackThreadId) {
@@ -355,7 +354,7 @@ export function useThreadActions() {
         return deleteResult;
       }
 
-      const removeResult = await removeWorktree({
+      let removeResult = await removeWorktree({
         environmentId: threadRef.environmentId,
         input: {
           cwd: threadProject.workspaceRoot,
@@ -363,6 +362,29 @@ export function useThreadActions() {
           force: true,
         },
       });
+      if (removeResult._tag === "Failure" && localApi) {
+        const error = squashAtomCommandFailure(removeResult);
+        if (isTerminalWorkspaceError(error) && error.sessions?.length) {
+          const confirmed = await localApi.dialogs.confirm(
+            [
+              "Removing this worktree will terminate these shared terminal sessions for every attached client:",
+              ...error.sessions.map((session) => `? ${session.label}`),
+              "",
+              "Terminate these sessions and remove the worktree?",
+            ].join("\n"),
+          );
+          if (!confirmed) return deleteResult;
+          removeResult = await removeWorktree({
+            environmentId: threadRef.environmentId,
+            input: {
+              cwd: threadProject.workspaceRoot,
+              path: orphanedWorktreePath,
+              force: true,
+              confirmedTerminalSessions: error.sessions,
+            },
+          });
+        }
+      }
       const refreshResult =
         removeResult._tag === "Success"
           ? await refreshVcsStatus({
@@ -399,8 +421,7 @@ export function useThreadActions() {
     [
       clearComposerDraftForThread,
       clearProjectDraftThreadById,
-      clearTerminalUiState,
-      closeTerminal,
+
       deleteThreadMutation,
       getCurrentRouteThreadRef,
       refreshVcsStatus,

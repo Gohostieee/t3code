@@ -167,7 +167,7 @@ function useConfirmDeleteThread(
   return useCallback(
     (thread: EnvironmentThreadShell) => {
       const title = "Delete thread?";
-      const message = `“${thread.title}” will be permanently deleted, including its terminal history.`;
+      const message = `“${thread.title}” will be permanently deleted; shared project terminals and their output will remain.`;
       if (process.env.EXPO_OS === "ios") {
         Alert.alert(title, message, [
           { text: "Cancel", style: "cancel" },

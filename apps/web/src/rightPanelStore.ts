@@ -23,6 +23,7 @@ export type RightPanelSurface =
   | {
       id: `terminal:${string}`;
       kind: "terminal";
+      workspaceId?: string;
       resourceId: string;
       terminalIds: string[];
       activeTerminalId: string;
@@ -53,7 +54,7 @@ interface RightPanelStoreState {
   open: (ref: ScopedThreadRef, kind: Exclude<RightPanelKind, "file" | "terminal">) => void;
   openBrowser: (ref: ScopedThreadRef, tabId: string | null) => void;
   openFile: (ref: ScopedThreadRef, relativePath: string, line?: number) => void;
-  openTerminal: (ref: ScopedThreadRef, terminalId: string) => void;
+  openTerminal: (ref: ScopedThreadRef, terminalId: string, workspaceId?: string) => void;
   splitTerminal: (
     ref: ScopedThreadRef,
     surfaceId: string,
@@ -112,9 +113,10 @@ const fileSurface = (
   revealRequestId,
 });
 
-const terminalSurface = (terminalId: string): RightPanelSurface => ({
+const terminalSurface = (terminalId: string, workspaceId?: string): RightPanelSurface => ({
   id: `terminal:${terminalId}`,
   kind: "terminal",
+  ...(workspaceId ? { workspaceId } : {}),
   resourceId: terminalId,
   terminalIds: [terminalId],
   activeTerminalId: terminalId,
@@ -286,10 +288,10 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             };
           }),
         })),
-      openTerminal: (ref, terminalId) =>
+      openTerminal: (ref, terminalId, workspaceId) =>
         set((state) => ({
           byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) =>
-            upsertSurface(current, terminalSurface(terminalId)),
+            upsertSurface(current, terminalSurface(terminalId, workspaceId)),
           ),
         })),
       splitTerminal: (ref, surfaceId, terminalId, direction = "horizontal") =>

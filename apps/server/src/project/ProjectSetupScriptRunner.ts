@@ -131,16 +131,33 @@ export const make = Effect.gen(function* () {
       } as const;
     }
 
-    const terminalId = input.preferredTerminalId ?? `setup-${script.id}`;
+    const terminalId = `task-${input.preferredTerminalId ?? `setup-${input.threadId}-${script.id}`}`;
     const cwd = input.worktreePath;
     const env = projectScriptRuntimeEnv({
       project: { cwd: project.workspaceRoot },
       worktreePath: input.worktreePath,
     });
+    const workspace = yield* terminalManager
+      .resolveWorkspace({
+        projectId: project.id,
+        cwd: project.workspaceRoot,
+        worktreePath: input.worktreePath,
+      })
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new ProjectSetupScriptOperationError({
+              ...errorContext,
+              operation: "openTerminal",
+              cause,
+            }),
+        ),
+      );
 
     yield* terminalManager
-      .open({
-        threadId: input.threadId,
+      .runTask({
+        command: `${script.command}\r`,
+        workspaceId: workspace.id,
         terminalId,
         cwd,
         worktreePath: input.worktreePath,
@@ -156,23 +173,6 @@ export const make = Effect.gen(function* () {
             }),
         ),
       );
-    yield* terminalManager
-      .write({
-        threadId: input.threadId,
-        terminalId,
-        data: `${script.command}\r`,
-      })
-      .pipe(
-        Effect.mapError(
-          (cause) =>
-            new ProjectSetupScriptOperationError({
-              ...errorContext,
-              operation: "writeCommand",
-              cause,
-            }),
-        ),
-      );
-
     return {
       status: "started",
       scriptId: script.id,

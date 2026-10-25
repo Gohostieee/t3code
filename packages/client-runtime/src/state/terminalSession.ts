@@ -1,10 +1,10 @@
+import { MAX_RETAINED_TERMINAL_SUMMARIES } from "@t3tools/contracts";
 import type {
   EnvironmentId,
   TerminalAttachStreamEvent,
   TerminalMetadataStreamEvent,
   TerminalSessionSnapshot,
   TerminalSummary,
-  ThreadId,
 } from "@t3tools/contracts";
 
 export interface TerminalSessionState {
@@ -18,6 +18,7 @@ export interface TerminalSessionState {
 }
 
 export interface TerminalBufferState {
+  readonly summary?: TerminalSummary;
   readonly buffer: string;
   readonly status: TerminalSessionSnapshot["status"] | "closed";
   readonly error: string | null;
@@ -27,7 +28,7 @@ export interface TerminalBufferState {
 
 export interface KnownTerminalSessionTarget {
   readonly environmentId: EnvironmentId;
-  readonly threadId: ThreadId;
+  readonly workspaceId: string;
   readonly terminalId: string;
 }
 
@@ -92,8 +93,10 @@ export function terminalBufferStateFromSnapshot(
   snapshot: TerminalSessionSnapshot,
   maxBufferBytes: number,
 ): TerminalBufferState {
+  const { history, sequence: _sequence, ...summary } = snapshot;
   return {
-    buffer: trimBufferToBytes(snapshot.history, maxBufferBytes),
+    summary: { ...summary, hasRunningSubprocess: false },
+    buffer: trimBufferToBytes(history, maxBufferBytes),
     status: snapshot.status,
     error: null,
     updatedAt: snapshot.updatedAt,
@@ -112,7 +115,13 @@ export function combineTerminalSessionState(
   buffer: TerminalBufferState,
 ): TerminalSessionState {
   return {
-    summary,
+    summary:
+      buffer.summary &&
+      (!summary ||
+        (buffer.summary.generation !== summary.generation &&
+          buffer.summary.updatedAt >= summary.updatedAt))
+        ? buffer.summary
+        : summary,
     buffer: buffer.buffer,
     status: buffer.version > 0 ? buffer.status : (summary?.status ?? buffer.status),
     error: buffer.error,
@@ -182,13 +191,21 @@ export function applyTerminalMetadataStreamEvent(
   if (event.type === "remove") {
     return current.filter(
       (terminal) =>
-        terminal.threadId !== event.threadId || terminal.terminalId !== event.terminalId,
+        terminal.workspaceId !== event.workspaceId || terminal.terminalId !== event.terminalId,
     );
   }
   const next = current.filter(
     (terminal) =>
-      terminal.threadId !== event.terminal.threadId ||
+      terminal.workspaceId !== event.terminal.workspaceId ||
       terminal.terminalId !== event.terminal.terminalId,
   );
-  return [...next, event.terminal];
+  let inactive = 0;
+  return [...next, event.terminal]
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    .filter(
+      (session) =>
+        session.status === "running" ||
+        session.status === "starting" ||
+        ++inactive <= MAX_RETAINED_TERMINAL_SUMMARIES,
+    );
 }

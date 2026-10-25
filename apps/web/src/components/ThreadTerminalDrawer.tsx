@@ -1,3 +1,5 @@
+import { vcsEnvironment } from "../state/vcs";
+import { useEnvironmentQuery } from "../state/query";
 import { useAtomValue } from "@effect/atom-react";
 import {
   isAtomCommandInterrupted,
@@ -15,7 +17,7 @@ import {
 import {
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
-  type ThreadId,
+  type EnvironmentId,
 } from "@t3tools/contracts";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import {
@@ -234,8 +236,9 @@ export function shouldHandleTerminalExit(
 }
 
 interface TerminalViewportProps {
-  threadRef: ScopedThreadRef;
-  threadId: ThreadId;
+  threadRef: ScopedThreadRef | null;
+  environmentId: EnvironmentId;
+  workspaceId: string;
   terminalId: string;
   terminalLabel: string;
   cwd: string;
@@ -258,13 +261,13 @@ interface TerminalLaunchLocation {
 
 export function TerminalViewport({
   threadRef,
-  threadId,
+  environmentId,
+  workspaceId,
   terminalId,
   terminalLabel,
   cwd,
   worktreePath,
   runtimeEnv,
-  onSessionExited,
   onAddTerminalContext,
   focusRequestId,
   autoFocus,
@@ -274,7 +277,7 @@ export function TerminalViewport({
 }: TerminalViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<GhosttyTerminalSurface | null>(null);
-  const environmentId = threadRef.environmentId;
+
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const openInPreferredEditor = useOpenInPreferredEditor(
     environmentId,
@@ -287,6 +290,10 @@ export function TerminalViewport({
   const runTerminalWrite = useAtomCommand(terminalEnvironment.write, {
     reportFailure: false,
   });
+  const restartTerminal = useAtomCommand(terminalEnvironment.restart, { reportFailure: false });
+  const checkoutStatus = useEnvironmentQuery(
+    vcsEnvironment.status({ environmentId, input: { cwd } }),
+  );
   const runTerminalResize = useAtomCommand(terminalEnvironment.resize, {
     reportFailure: false,
   });
@@ -298,17 +305,15 @@ export function TerminalViewport({
   const selectionActionTimerRef = useRef<number | null>(null);
   const keybindingsRef = useRef(keybindings);
   const runtimeEnvKey = useMemo(() => runtimeEnvSignature(runtimeEnv), [runtimeEnv]);
-  const handleSessionExited = useEffectEvent(() => {
-    onSessionExited();
-  });
   const handleAddTerminalContext = useEffectEvent((selection: TerminalContextSelection) => {
     onAddTerminalContext(selection);
   });
   const readTerminalLabel = useEffectEvent(() => terminalLabel);
+  const readThreadRef = useEffectEvent(() => threadRef);
   const terminalSession = useAttachedTerminalSession({
     environmentId,
     terminal: {
-      threadId,
+      workspaceId,
       terminalId,
       cwd,
       ...(worktreePath !== undefined ? { worktreePath } : {}),
@@ -318,15 +323,26 @@ export function TerminalViewport({
   const writeTerminal = useEffectEvent((data: string) =>
     runTerminalWrite({
       environmentId,
-      input: { threadId, terminalId, data },
+      input: { workspaceId, terminalId, generation: terminalSession.summary?.generation, data },
     }),
   );
-  const resizeTerminal = useEffectEvent((cols: number, rows: number) =>
-    runTerminalResize({
+  const resizeTerminal = useEffectEvent((cols: number, rows: number) => {
+    if (
+      document.visibilityState !== "visible" ||
+      !containerRef.current?.contains(document.activeElement)
+    )
+      return;
+    return runTerminalResize({
       environmentId,
-      input: { threadId, terminalId, cols, rows },
-    }),
-  );
+      input: {
+        workspaceId,
+        terminalId,
+        generation: terminalSession.summary?.generation,
+        cols,
+        rows,
+      },
+    });
+  });
   const terminalBuffer = terminalSession.buffer;
   const terminalError = terminalSession.error;
   const terminalStatus = terminalSession.status;
@@ -339,11 +355,6 @@ export function TerminalViewport({
       } else if (shouldHandleTerminalExit(status, synchronized, hasHandledExitRef.current)) {
         hasHandledExitRef.current = true;
         writeSystemMessage(terminal, status === "closed" ? "Terminal closed" : "Process exited");
-        window.setTimeout(() => {
-          if (hasHandledExitRef.current) {
-            handleSessionExited();
-          }
-        }, 0);
       }
       synchronizedStatusRef.current = status;
     },
@@ -445,6 +456,9 @@ export function TerminalViewport({
           position,
           clipboardText: selectionText,
           selection: {
+            environmentId,
+            workspaceId,
+            cwd,
             terminalId,
             terminalLabel: readTerminalLabel(),
             lineStart,
@@ -472,7 +486,7 @@ export function TerminalViewport({
         const clicked = await localApi.contextMenu
           .show(
             [
-              { id: "add-to-chat", label: "Add to chat" },
+              ...(readThreadRef() ? [{ id: "add-to-chat", label: "Add to chat" }] : []),
               { id: "copy", label: "Copy" },
             ],
             nextAction.position,
@@ -578,10 +592,15 @@ export function TerminalViewport({
               );
             });
           };
+          const consumingThread = readThreadRef();
+          if (!consumingThread) {
+            fallbackToBrowser();
+            return;
+          }
           void openTerminalLinkInPreview({
             url: text,
             position: { x: event.clientX, y: event.clientY },
-            threadRef,
+            threadRef: consumingThread,
             openPreview,
             localApi,
             fallbackToBrowser,
@@ -719,7 +738,7 @@ export function TerminalViewport({
     };
     // autoFocus is intentionally omitted;
     // it is only read at mount time and must not trigger terminal teardown/recreation.
-  }, [cwd, environmentId, runtimeEnvKey, terminalId, threadId, worktreePath]);
+  }, [cwd, environmentId, runtimeEnvKey, terminalId, workspaceId, worktreePath]);
 
   useEffect(() => {
     const terminal = terminalRef.current;
@@ -789,19 +808,59 @@ export function TerminalViewport({
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [drawerHeight, environmentId, resizeEpoch, terminalId, threadId]);
+  }, [drawerHeight, environmentId, resizeEpoch, terminalId, workspaceId]);
   return (
-    <div
-      ref={containerRef}
-      className="relative h-full w-full overflow-hidden rounded-[4px] bg-background"
-    />
+    <div className="flex h-full w-full flex-col overflow-hidden rounded-[4px] bg-background">
+      <div className="flex items-center gap-2 border-b px-2 py-1 text-xs text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate" title={`Launch directory: ${cwd}`}>
+          Launch: {cwd}
+        </span>
+        {checkoutStatus.data?.isRepo && (
+          <span>{checkoutStatus.data.refName ?? "Detached HEAD"}</span>
+        )}
+        {terminalVersion > 0 &&
+          (terminalStatus === "closed" ||
+            terminalStatus === "exited" ||
+            terminalStatus === "error") && (
+            <button
+              className="rounded border px-2 py-1 text-foreground"
+              onClick={() =>
+                void restartTerminal({
+                  environmentId,
+                  input: {
+                    workspaceId,
+                    terminalId,
+                    generation: terminalSession.summary?.generation,
+                    cwd,
+                    worktreePath,
+                    cols: 100,
+                    rows: 24,
+                    ...(runtimeEnv ? { env: runtimeEnv } : {}),
+                  },
+                })
+              }
+            >
+              Restart session
+            </button>
+          )}
+      </div>
+      <div
+        ref={containerRef}
+        className="relative min-h-0 flex-1"
+        onFocusCapture={() => {
+          const surface = terminalRef.current;
+          if (surface) void resizeTerminal(surface.cols, surface.rows);
+        }}
+      />
+    </div>
   );
 }
 
 interface ThreadTerminalDrawerProps {
   mode?: "drawer" | "panel";
-  threadRef: ScopedThreadRef;
-  threadId: ThreadId;
+  threadRef: ScopedThreadRef | null;
+  environmentId: EnvironmentId;
+  workspaceId: string;
   cwd: string;
   worktreePath?: string | null;
   runtimeEnv?: Record<string, string>;
@@ -862,7 +921,8 @@ function TerminalActionButton({ label, className, onClick, children }: TerminalA
 export default function ThreadTerminalDrawer({
   mode = "drawer",
   threadRef,
-  threadId,
+  environmentId,
+  workspaceId,
   cwd,
   worktreePath,
   runtimeEnv,
@@ -891,23 +951,25 @@ export default function ThreadTerminalDrawer({
   const isPanel = mode === "panel";
   const controlledDrawerHeight = clampDrawerHeight(height);
   const [drawerHeightState, setDrawerHeightState] = useState(() => ({
-    threadId,
+    workspaceId,
     height: controlledDrawerHeight,
   }));
   const drawerHeight =
-    drawerHeightState.threadId === threadId ? drawerHeightState.height : controlledDrawerHeight;
+    drawerHeightState.workspaceId === workspaceId
+      ? drawerHeightState.height
+      : controlledDrawerHeight;
   const setDrawerHeight = useCallback(
     (update: SetStateAction<number>) => {
       setDrawerHeightState((current) => {
         const currentHeight =
-          current.threadId === threadId ? current.height : controlledDrawerHeight;
+          current.workspaceId === workspaceId ? current.height : controlledDrawerHeight;
         const nextHeight = typeof update === "function" ? update(currentHeight) : update;
-        return nextHeight === currentHeight && current.threadId === threadId
+        return nextHeight === currentHeight && current.workspaceId === workspaceId
           ? current
-          : { threadId, height: nextHeight };
+          : { workspaceId, height: nextHeight };
       });
     },
-    [controlledDrawerHeight, threadId],
+    [controlledDrawerHeight, workspaceId],
   );
   const setDrawerHeightFromWindowResize = useEffectEvent((nextHeight: number) => {
     setDrawerHeight(nextHeight);
@@ -1071,8 +1133,8 @@ export default function ThreadTerminalDrawer({
     ? `New Terminal (${newShortcutLabel})`
     : "New Terminal";
   const closeTerminalActionLabel = closeShortcutLabel
-    ? `Close Terminal (${closeShortcutLabel})`
-    : "Close Terminal";
+    ? `Terminate session (${closeShortcutLabel})`
+    : "Terminate session";
   const onSplitTerminalAction = useCallback(() => {
     if (hasReachedSplitLimit) return;
     onSplitTerminal();
@@ -1102,7 +1164,7 @@ export default function ThreadTerminalDrawer({
 
   useEffect(() => {
     lastSyncedHeightRef.current = controlledDrawerHeight;
-  }, [controlledDrawerHeight, threadId]);
+  }, [controlledDrawerHeight, workspaceId]);
 
   const handleResizePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
@@ -1326,7 +1388,8 @@ export default function ThreadTerminalDrawer({
                       <div className="h-full p-1">
                         <TerminalViewport
                           threadRef={threadRef}
-                          threadId={threadId}
+                          environmentId={environmentId}
+                          workspaceId={workspaceId}
                           terminalId={terminalId}
                           terminalLabel={terminalLabelById.get(terminalId) ?? "Terminal"}
                           cwd={terminalLaunchLocation.cwd}
@@ -1354,7 +1417,8 @@ export default function ThreadTerminalDrawer({
                 <TerminalViewport
                   key={resolvedActiveTerminalId}
                   threadRef={threadRef}
-                  threadId={threadId}
+                  environmentId={environmentId}
+                  workspaceId={workspaceId}
                   terminalId={resolvedActiveTerminalId}
                   terminalLabel={terminalLabelById.get(resolvedActiveTerminalId) ?? "Terminal"}
                   cwd={activeTerminalLaunchLocation.cwd}
@@ -1448,7 +1512,7 @@ export default function ThreadTerminalDrawer({
                       >
                         {terminalGroup.terminalIds.map((terminalId) => {
                           const isActive = terminalId === resolvedActiveTerminalId;
-                          const closeTerminalLabel = `Close ${
+                          const closeTerminalLabel = `Terminate ${
                             terminalLabelById.get(terminalId) ?? "terminal"
                           }${isActive && closeShortcutLabel ? ` (${closeShortcutLabel})` : ""}`;
                           return (

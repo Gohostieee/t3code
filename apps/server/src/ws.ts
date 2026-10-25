@@ -53,6 +53,7 @@ import {
   ThreadId,
   type TerminalAttachStreamEvent,
   type TerminalError,
+  TerminalWorkspaceError,
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
   WS_METHODS,
@@ -1032,6 +1033,8 @@ const makeWsRpcLayer = (
                       )
                   : false;
               const result = yield* dispatchNormalizedCommand(normalizedCommand);
+              if (normalizedCommand.type === "project.delete")
+                yield* terminalManager.closeProject(normalizedCommand.projectId);
               if (normalizedCommand.type === "thread.archive") {
                 if (shouldStopSessionAfterArchive) {
                   yield* Effect.gen(function* () {
@@ -1054,15 +1057,6 @@ const makeWsRpcLayer = (
                     ),
                   );
                 }
-
-                yield* terminalManager.close({ threadId: normalizedCommand.threadId }).pipe(
-                  Effect.catch((error) =>
-                    Effect.logWarning("failed to close thread terminals after archive", {
-                      threadId: normalizedCommand.threadId,
-                      error: error.message,
-                    }),
-                  ),
-                );
               }
               return result;
             }).pipe(
@@ -1808,7 +1802,13 @@ const makeWsRpcLayer = (
         [WS_METHODS.vcsRemoveWorktree]: (input) =>
           observeRpcEffect(
             WS_METHODS.vcsRemoveWorktree,
-            gitWorkflow.removeWorktree(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+            terminalManager
+              .withCheckoutRemoval(
+                input.path,
+                gitWorkflow.removeWorktree(input),
+                input.confirmedTerminalSessions,
+              )
+              .pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
             { "rpc.aggregate": "vcs" },
           ),
         [WS_METHODS.vcsCreateRef]: (input) =>
@@ -1835,10 +1835,97 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.reviewGetDiffPreview, review.getDiffPreview(input), {
             "rpc.aggregate": "review",
           }),
+        [WS_METHODS.terminalLegacyHistory]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.terminalLegacyHistory,
+            terminalManager.legacyHistory(input.historyId),
+            { "rpc.aggregate": "terminal" },
+          ),
+        [WS_METHODS.terminalListWorkspaces]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.terminalListWorkspaces,
+            Effect.gen(function* () {
+              const project = yield* projectionSnapshotQuery
+                .getProjectShellById(input.projectId)
+                .pipe(
+                  Effect.mapError(
+                    () =>
+                      new TerminalWorkspaceError({
+                        message: "Unable to resolve the terminal project.",
+                      }),
+                  ),
+                );
+              if (Option.isNone(project)) {
+                return yield* new TerminalWorkspaceError({
+                  message: "The terminal project is unavailable.",
+                });
+              }
+              if (
+                input.expectedProjectRoot &&
+                input.expectedProjectRoot !== project.value.workspaceRoot
+              )
+                return yield* new TerminalWorkspaceError({
+                  message: "The project root changed. Refresh the checkout selection.",
+                });
+              return yield* terminalManager.listWorkspaces({
+                projectId: input.projectId,
+                cwd: project.value.workspaceRoot,
+              });
+            }),
+            { "rpc.aggregate": "terminal" },
+          ),
+        [WS_METHODS.terminalResolveWorkspace]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.terminalResolveWorkspace,
+            Effect.gen(function* () {
+              const project = yield* projectionSnapshotQuery
+                .getProjectShellById(input.projectId)
+                .pipe(
+                  Effect.mapError(
+                    () =>
+                      new TerminalWorkspaceError({
+                        message: "Unable to resolve the terminal project.",
+                      }),
+                  ),
+                );
+              if (Option.isNone(project)) {
+                return yield* new TerminalWorkspaceError({
+                  message: "The terminal project is unavailable.",
+                });
+              }
+              if (
+                input.expectedProjectRoot &&
+                input.expectedProjectRoot !== project.value.workspaceRoot
+              )
+                return yield* new TerminalWorkspaceError({
+                  message: "The project root changed. Refresh the checkout selection.",
+                });
+              return yield* terminalManager.resolveWorkspace({
+                projectId: input.projectId,
+                cwd: project.value.workspaceRoot,
+                worktreePath: input.worktreePath,
+              });
+            }),
+            { "rpc.aggregate": "terminal" },
+          ),
+        [WS_METHODS.terminalRunTask]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.terminalRunTask,
+            terminalManager
+              .validateWorkspace(input.workspaceId, input.cwd)
+              .pipe(Effect.andThen(terminalManager.runTask(input))),
+            { "rpc.aggregate": "terminal" },
+          ),
         [WS_METHODS.terminalOpen]: (input) =>
-          observeRpcEffect(WS_METHODS.terminalOpen, terminalManager.open(input), {
-            "rpc.aggregate": "terminal",
-          }),
+          observeRpcEffect(
+            WS_METHODS.terminalOpen,
+            terminalManager
+              .validateWorkspace(input.workspaceId, input.cwd)
+              .pipe(Effect.andThen(terminalManager.open(input))),
+            {
+              "rpc.aggregate": "terminal",
+            },
+          ),
         [WS_METHODS.terminalAttach]: (input) =>
           observeRpcStream(
             WS_METHODS.terminalAttach,
@@ -1846,14 +1933,20 @@ const makeWsRpcLayer = (
               Effect.acquireRelease(
                 terminalManager.attachStream(input, (event) => Queue.offer(queue, event)),
                 (unsubscribe) => Effect.sync(unsubscribe),
-              ),
+              ).pipe(Effect.catchCause((cause) => Queue.failCause(queue, cause))),
             ),
             { "rpc.aggregate": "terminal" },
           ),
         [WS_METHODS.terminalWrite]: (input) =>
-          observeRpcEffect(WS_METHODS.terminalWrite, terminalManager.write(input), {
-            "rpc.aggregate": "terminal",
-          }),
+          observeRpcEffect(
+            WS_METHODS.terminalWrite,
+            terminalManager
+              .validateWorkspace(input.workspaceId)
+              .pipe(Effect.andThen(terminalManager.write(input))),
+            {
+              "rpc.aggregate": "terminal",
+            },
+          ),
         [WS_METHODS.terminalResize]: (input) =>
           observeRpcEffect(WS_METHODS.terminalResize, terminalManager.resize(input), {
             "rpc.aggregate": "terminal",
@@ -1863,9 +1956,15 @@ const makeWsRpcLayer = (
             "rpc.aggregate": "terminal",
           }),
         [WS_METHODS.terminalRestart]: (input) =>
-          observeRpcEffect(WS_METHODS.terminalRestart, terminalManager.restart(input), {
-            "rpc.aggregate": "terminal",
-          }),
+          observeRpcEffect(
+            WS_METHODS.terminalRestart,
+            terminalManager
+              .validateWorkspace(input.workspaceId, input.cwd)
+              .pipe(Effect.andThen(terminalManager.restart(input))),
+            {
+              "rpc.aggregate": "terminal",
+            },
+          ),
         [WS_METHODS.terminalClose]: (input) =>
           observeRpcEffect(WS_METHODS.terminalClose, terminalManager.close(input), {
             "rpc.aggregate": "terminal",

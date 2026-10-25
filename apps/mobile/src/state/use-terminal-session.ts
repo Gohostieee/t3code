@@ -2,6 +2,7 @@ import {
   combineTerminalSessionState,
   EMPTY_TERMINAL_BUFFER_STATE,
   EMPTY_TERMINAL_SESSION_STATE,
+  selectRunningSubprocessTerminalIds,
   type KnownTerminalSession,
   type TerminalSessionState,
 } from "@t3tools/client-runtime/state/terminal";
@@ -10,6 +11,7 @@ import { useMemo } from "react";
 
 import { useEnvironmentQuery } from "./query";
 import { terminalEnvironment } from "./terminal";
+import { useThreadTerminalWorkspace } from "./terminalWorkspace";
 
 export function useAttachedTerminalSession(input: {
   readonly environmentId: EnvironmentId | null;
@@ -39,7 +41,7 @@ export function useAttachedTerminalSession(input: {
     const summary =
       metadata.data?.find(
         (terminal) =>
-          terminal.threadId === input.terminal?.threadId &&
+          terminal.workspaceId === input.terminal?.workspaceId &&
           terminal.terminalId === input.terminal?.terminalId,
       ) ?? null;
     const state = combineTerminalSessionState(summary, attach.data ?? EMPTY_TERMINAL_BUFFER_STATE);
@@ -49,8 +51,15 @@ export function useAttachedTerminalSession(input: {
 
 export function useKnownTerminalSessions(input: {
   readonly environmentId: EnvironmentId | null;
-  readonly threadId: ThreadId | null;
+  readonly threadId?: ThreadId | null;
+  readonly workspaceId?: string | null;
 }): ReadonlyArray<KnownTerminalSession> {
+  const threadWorkspace = useThreadTerminalWorkspace(
+    input.environmentId && input.threadId
+      ? { environmentId: input.environmentId, threadId: input.threadId }
+      : null,
+  );
+  const workspaceId = input.workspaceId ?? threadWorkspace.data?.id;
   const metadata = useEnvironmentQuery(
     input.environmentId === null
       ? null
@@ -64,11 +73,11 @@ export function useKnownTerminalSessions(input: {
       return [];
     }
     return (metadata.data ?? [])
-      .filter((summary) => input.threadId === null || summary.threadId === input.threadId)
+      .filter((summary) => workspaceId !== undefined && summary.workspaceId === workspaceId)
       .map((summary) => ({
         target: {
           environmentId: input.environmentId!,
-          threadId: ThreadId.make(summary.threadId),
+          workspaceId: summary.workspaceId,
           terminalId: summary.terminalId,
         },
         state: combineTerminalSessionState(summary, EMPTY_TERMINAL_BUFFER_STATE),
@@ -78,5 +87,12 @@ export function useKnownTerminalSessions(input: {
           numeric: true,
         }),
       );
-  }, [input.environmentId, input.threadId, metadata.data]);
+  }, [input.environmentId, workspaceId, metadata.data]);
+}
+
+export function useThreadRunningTerminalIds(input: {
+  readonly environmentId: EnvironmentId | null;
+  readonly threadId: ThreadId | null;
+}): ReadonlyArray<string> {
+  return selectRunningSubprocessTerminalIds(useKnownTerminalSessions(input));
 }

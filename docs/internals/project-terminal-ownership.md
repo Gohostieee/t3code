@@ -1,0 +1,15 @@
+# Terminal checkout ownership
+
+Interactive PTYs belong to an environment-local project checkout, independently of threads. `terminal.resolveWorkspace` resolves the project's root or an existing Git worktree. Real paths, directory identity, and project ID determine the workspace ID; branch names, repository URLs, transport URLs, and thread IDs do not.
+
+Resolution verifies worktree membership using the repository's common Git directory and the worktree root. A nested directory can be an explicit additional session's launch directory, but cannot introduce another default checkout. Missing or replaced directories produce terminal errors.
+
+The existing terminal manager owns process lifetime, workspace locks, output fanout, and history. `term-1` is the initial primary identity. Explicit default opens deterministically select a live interactive session, or allocate a new identity after all interactive sessions have ended. Passive attachment never replaces a session. Explicit extra sessions use UUIDs. `terminal.runTask` uses a dedicated task ID as its idempotency key; an existing task is never resent, including after server restart. A failed or uncertain task can be deliberately rerun with a new ID.
+
+Attach is read-only with respect to process creation. The shared client runtime explicitly opens an unknown session before retrying attachment. Open reuses live or ended sessions; only restart replaces an existing process. Generation identifiers reject delayed mutations for replaced processes. Checkout removal serializes against opens and requires confirmation of every live session generation before terminating and removing the checkout.
+
+Lightweight session records live beside bounded output logs. Metadata streams retain live sessions and at most 128 ended summaries; older transcripts remain accessible through Saved history. They contain ownership, launch location, lifecycle state, and generation, without environment-variable values. On startup, records become ended sessions; output loads lazily. A recorded live process is never treated as surviving the server. Legacy log-only records lack trustworthy launch metadata, so the legacy-history RPC exposes them individually as unassigned, read-only transcripts. It accepts only IDs returned by directory enumeration. Original files remain intact.
+
+The protocol uses `workspaceId` rather than `threadId`. Legacy terminal mutation payloads fail schema validation; clients must update with the server. Web drawer state uses a new checkout-scoped storage namespace, preserving the old thread layout storage for diagnosis. Existing right-panel terminal descriptors without checkout ownership remain unavailable rather than silently launching shells in a guessed checkout. Users can recover their transcripts through Saved history.
+
+Thread-bound previews and composer excerpts still target the consuming thread. Captured excerpts retain their environment, checkout, launch directory, and session provenance. PTY ownership does not grant provider adapters access to the interactive shell.

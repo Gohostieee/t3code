@@ -68,7 +68,7 @@ describe("pending terminal launches", () => {
   it("stages and consumes launch details for a specific terminal target", () => {
     const target = {
       environmentId: EnvironmentId.make("env-1"),
-      threadId: ThreadId.make("thread-1"),
+      workspaceId: ThreadId.make("thread-1"),
       terminalId: "term-2",
     };
 
@@ -100,12 +100,12 @@ describe("pending terminal launches", () => {
   it("keeps pending launches isolated per terminal target", () => {
     const primaryTarget = {
       environmentId: EnvironmentId.make("env-1"),
-      threadId: ThreadId.make("thread-1"),
+      workspaceId: ThreadId.make("thread-1"),
       terminalId: "term-2",
     };
     const otherTarget = {
       environmentId: EnvironmentId.make("env-1"),
-      threadId: ThreadId.make("thread-1"),
+      workspaceId: ThreadId.make("thread-1"),
       terminalId: "term-3",
     };
 

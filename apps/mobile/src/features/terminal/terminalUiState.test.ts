@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it } from "vite-plus/test";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
 import {
+  cacheSelectedTerminal,
+  getSelectedTerminal,
   cacheTerminalFontSize,
   cacheTerminalGridSize,
   getCachedTerminalFontSize,
@@ -22,15 +24,31 @@ describe("terminalUiState", () => {
     expect(getCachedTerminalFontSize()).toBe(14);
   });
 
+  it("retains a selected session per environment and checkout across navigation", () => {
+    const target = {
+      environmentId: EnvironmentId.make("env-1"),
+      workspaceId: "main",
+      terminalId: "extra",
+    };
+    cacheSelectedTerminal(target);
+    expect(getSelectedTerminal({ environmentId: target.environmentId, workspaceId: "main" })).toBe(
+      "extra",
+    );
+    expect(getSelectedTerminal({ ...target, workspaceId: "worktree" })).toBeNull();
+    expect(
+      getSelectedTerminal({ ...target, environmentId: EnvironmentId.make("env-2") }),
+    ).toBeNull();
+  });
+
   it("stores terminal grid sizes per terminal target", () => {
     const primaryTarget = {
       environmentId: EnvironmentId.make("env-1"),
-      threadId: ThreadId.make("thread-1"),
+      workspaceId: ThreadId.make("thread-1"),
       terminalId: "default",
     };
     const otherTarget = {
       environmentId: EnvironmentId.make("env-1"),
-      threadId: ThreadId.make("thread-1"),
+      workspaceId: ThreadId.make("thread-1"),
       terminalId: "term-2",
     };
 

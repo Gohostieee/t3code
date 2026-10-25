@@ -1,3 +1,4 @@
+import { TerminalRemovalSession } from "./terminal.ts";
 import * as Schema from "effect/Schema";
 import { NonNegativeInt, PositiveInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { SourceControlProviderError, SourceControlProviderInfo } from "./sourceControl.ts";
@@ -158,6 +159,7 @@ export const GitPreparePullRequestThreadInput = Schema.Struct({
 export type GitPreparePullRequestThreadInput = typeof GitPreparePullRequestThreadInput.Type;
 
 export const VcsRemoveWorktreeInput = Schema.Struct({
+  confirmedTerminalSessions: Schema.optional(Schema.Array(TerminalRemovalSession)),
   cwd: TrimmedNonEmptyStringSchema,
   path: TrimmedNonEmptyStringSchema,
   force: Schema.optional(Schema.Boolean),

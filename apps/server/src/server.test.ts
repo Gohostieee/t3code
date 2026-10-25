@@ -91,6 +91,8 @@ import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
+import * as ProcessRunner from "./processRunner.ts";
+import { FakePtyAdapter } from "./terminal/testing.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as BrowserTraceCollector from "./observability/BrowserTraceCollector.ts";
@@ -675,6 +677,8 @@ const buildAppUnderTest = (options?: {
       ),
       Layer.provide(
         Layer.mock(TerminalManager.TerminalManager)({
+          withCheckoutRemoval: (_cwd, operation) => operation,
+          closeProject: () => Effect.void,
           ...options?.layers?.terminalManager,
         }),
       ),
@@ -6472,7 +6476,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("stops the provider session and closes thread terminals after archive", () =>
+  it.effect("stops the provider session and preserves shared terminals after archive", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("thread-archive");
       const effects: string[] = [];
@@ -6484,7 +6488,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           terminalManager: {
             close: (input) =>
               Effect.sync(() => {
-                effects.push(`terminal.close:${input.threadId}`);
+                effects.push(`terminal.close:${input.workspaceId}`);
               }),
           },
           orchestrationEngine: {
@@ -6530,11 +6534,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       );
 
       assert.equal(dispatchResult.sequence, 1);
-      assert.deepEqual(effects, [
-        "dispatch:thread.archive",
-        "dispatch:thread.session.stop",
-        `terminal.close:${threadId}`,
-      ]);
+      assert.deepEqual(effects, ["dispatch:thread.archive", "dispatch:thread.session.stop"]);
       const sessionStopCommand = dispatchedCommands[1];
       assert.equal(sessionStopCommand?.type, "thread.session.stop");
       if (sessionStopCommand?.type === "thread.session.stop") {
@@ -6556,7 +6556,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           terminalManager: {
             close: (input) =>
               Effect.sync(() => {
-                effects.push(`terminal.close:${input.threadId}`);
+                effects.push(`terminal.close:${input.workspaceId}`);
               }),
           },
           orchestrationEngine: {
@@ -6612,7 +6612,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         "query:thread-shell:active",
         "dispatch:thread.archive",
         "dispatch:thread.session.stop",
-        `terminal.close:${threadId}`,
       ]);
       assert.deepEqual(
         dispatchedCommands.map((command) => command.type),
@@ -6632,7 +6631,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           terminalManager: {
             close: (input) =>
               Effect.sync(() => {
-                effects.push(`terminal.close:${input.threadId}`);
+                effects.push(`terminal.close:${input.workspaceId}`);
               }),
           },
           orchestrationEngine: {
@@ -6664,7 +6663,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       );
 
       assert.equal(dispatchResult.sequence, 1);
-      assert.deepEqual(effects, ["dispatch:thread.archive", `terminal.close:${threadId}`]);
+      assert.deepEqual(effects, ["dispatch:thread.archive"]);
       assert.deepEqual(
         dispatchedCommands.map((command) => command.type),
         ["thread.archive"],
@@ -6686,7 +6685,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             terminalManager: {
               close: (input) =>
                 Effect.sync(() => {
-                  effects.push(`terminal.close:${input.threadId}`);
+                  effects.push(`terminal.close:${input.workspaceId}`);
                 }),
             },
             orchestrationEngine: {
@@ -6732,7 +6731,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         );
 
         assert.equal(dispatchResult.sequence, 1);
-        assert.deepEqual(effects, ["dispatch:thread.archive", `terminal.close:${threadId}`]);
+        assert.deepEqual(effects, ["dispatch:thread.archive"]);
         assert.deepEqual(
           dispatchedCommands.map((command) => command.type),
           ["thread.archive"],
@@ -6740,7 +6739,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("archives and still closes terminals when session stop fails", () =>
+  it.effect("archives and preserves shared terminals when session stop fails", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("thread-archive-stop-failure");
       const effects: string[] = [];
@@ -6752,7 +6751,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           terminalManager: {
             close: (input) =>
               Effect.sync(() => {
-                effects.push(`terminal.close:${input.threadId}`);
+                effects.push(`terminal.close:${input.workspaceId}`);
               }),
           },
           orchestrationEngine: {
@@ -6805,11 +6804,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       );
 
       assert.equal(dispatchResult.sequence, 1);
-      assert.deepEqual(effects, [
-        "dispatch:thread.archive",
-        "dispatch:thread.session.stop",
-        `terminal.close:${threadId}`,
-      ]);
+      assert.deepEqual(effects, ["dispatch:thread.archive", "dispatch:thread.session.stop"]);
       assert.deepEqual(
         dispatchedCommands.map((command) => command.type),
         ["thread.archive", "thread.session.stop"],
@@ -6817,7 +6812,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("archives and still closes terminals when session stop defects", () =>
+  it.effect("archives and preserves shared terminals when session stop defects", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("thread-archive-stop-defect");
       const effects: string[] = [];
@@ -6829,7 +6824,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           terminalManager: {
             close: (input) =>
               Effect.sync(() => {
-                effects.push(`terminal.close:${input.threadId}`);
+                effects.push(`terminal.close:${input.workspaceId}`);
               }),
           },
           orchestrationEngine: {
@@ -6877,11 +6872,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       );
 
       assert.equal(dispatchResult.sequence, 1);
-      assert.deepEqual(effects, [
-        "dispatch:thread.archive",
-        "dispatch:thread.session.stop",
-        `terminal.close:${threadId}`,
-      ]);
+      assert.deepEqual(effects, ["dispatch:thread.archive", "dispatch:thread.session.stop"]);
       assert.deepEqual(
         dispatchedCommands.map((command) => command.type),
         ["thread.archive", "thread.session.stop"],
@@ -7380,10 +7371,544 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  const createTerminalRpcFixture = Effect.fn("createTerminalRpcFixture")(function* (
+    options: { cwd?: string } = {},
+  ) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const cwd =
+      options.cwd ?? (yield* fs.makeTempDirectoryScoped({ prefix: "t3-project-terminal-" }));
+    const ptyAdapter = new FakePtyAdapter("async");
+    const manager = yield* TerminalManager.makeWithOptions({
+      logsDir: path.join(cwd, "logs"),
+      processKillGraceMs: 0,
+      subprocessInspector: () =>
+        Effect.succeed({ hasRunningSubprocess: false, childCommand: null, processIds: [] }),
+      ptyAdapter,
+    }).pipe(Effect.provide(ProcessRunner.layer));
+    const project = { ...makeDefaultOrchestrationReadModel().projects[0]!, workspaceRoot: cwd };
+    yield* buildAppUnderTest({
+      layers: {
+        terminalManager: manager,
+        projectionSnapshotQuery: {
+          getProjectShellById: () => Effect.succeed(Option.some(project)),
+        },
+      },
+    });
+    const wsUrl = yield* getWsServerUrl("/ws");
+    return { cwd, manager, ptyAdapter, wsUrl };
+  });
+
+  it.effect("reports missing terminal attachments so an explicit client open can recover", () =>
+    Effect.gen(function* () {
+      const { wsUrl, ptyAdapter } = yield* createTerminalRpcFixture();
+      yield* withWsRpcClient(wsUrl, (client) =>
+        Effect.gen(function* () {
+          const workspace = yield* client[WS_METHODS.terminalResolveWorkspace]({
+            projectId: defaultProjectId,
+            worktreePath: null,
+          });
+          const input = {
+            workspaceId: workspace.id,
+            terminalId: "new-interactive",
+            cwd: workspace.cwd,
+          };
+          const missing = yield* client[WS_METHODS.terminalAttach](input).pipe(
+            Stream.runHead,
+            Effect.flip,
+          );
+          assert.equal(missing._tag, "TerminalSessionLookupError");
+          assert.equal(ptyAdapter.spawnInputs.length, 0);
+          const opened = yield* client[WS_METHODS.terminalOpen](input);
+          const attached = yield* client[WS_METHODS.terminalAttach](input).pipe(Stream.runHead);
+          assertTrue(Option.isSome(attached) && attached.value.type === "snapshot");
+          assert.equal(attached.value.snapshot.pid, opened.pid);
+        }),
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("shares a project checkout terminal across concurrent client opens", () =>
+    Effect.gen(function* () {
+      const { wsUrl, ptyAdapter } = yield* createTerminalRpcFixture();
+      const openFromClient = withWsRpcClient(wsUrl, (client) =>
+        Effect.gen(function* () {
+          const workspace = yield* client[WS_METHODS.terminalResolveWorkspace]({
+            projectId: defaultProjectId,
+            worktreePath: null,
+          });
+          return yield* client[WS_METHODS.terminalOpen]({
+            workspaceId: workspace.id,
+            terminalId: "term-1",
+            cwd: workspace.cwd,
+          });
+        }),
+      );
+      const [first, second] = yield* Effect.all([openFromClient, openFromClient], {
+        concurrency: "unbounded",
+      });
+      assert.equal(first.workspaceId, second.workspaceId);
+      assert.equal(first.pid, second.pid);
+      assert.equal(ptyAdapter.spawnInputs.length, 1);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect(
+    "rejects changing the launch directory of a shared terminal without restarting it",
+    () =>
+      Effect.gen(function* () {
+        const { wsUrl, cwd, ptyAdapter } = yield* createTerminalRpcFixture();
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const otherDirectory = path.join(cwd, "another-directory");
+        yield* fs.makeDirectory(otherDirectory);
+        yield* withWsRpcClient(wsUrl, (client) =>
+          Effect.gen(function* () {
+            const workspace = yield* client[WS_METHODS.terminalResolveWorkspace]({
+              projectId: defaultProjectId,
+              worktreePath: null,
+            });
+            const input = { workspaceId: workspace.id, terminalId: "term-1", cwd: workspace.cwd };
+            const opened = yield* client[WS_METHODS.terminalOpen](input);
+            const incompatible = yield* client[WS_METHODS.terminalOpen]({
+              ...input,
+              cwd: otherDirectory,
+            }).pipe(Effect.result);
+            assert.equal(incompatible._tag, "Failure");
+            const reopened = yield* client[WS_METHODS.terminalOpen](input);
+            assert.equal(reopened.pid, opened.pid);
+            assert.equal(ptyAdapter.spawnInputs.length, 1);
+            assert.equal(ptyAdapter.processes[0]?.killed, false);
+          }),
+        );
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("isolates linked worktrees and rejects a different clone as a project checkout", () =>
+    Effect.gen(function* () {
+      const { wsUrl, cwd, ptyAdapter } = yield* createTerminalRpcFixture();
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const parent = yield* fs.makeTempDirectoryScoped({ prefix: "t3-terminal-worktrees-" });
+      const runner = yield* ProcessRunner.ProcessRunner;
+      const git = (...args: string[]) =>
+        runner
+          .run({ command: "git", cwd, args })
+          .pipe(
+            Effect.tap((result) => Effect.sync(() => assert.equal(result.code, 0, result.stderr))),
+          );
+      yield* git("init");
+      yield* git(
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.invalid",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "initial",
+      );
+      const worktree = path.join(parent, "linked");
+      const clone = path.join(parent, "clone");
+      yield* git("worktree", "add", "--detach", worktree);
+      yield* git("clone", cwd, clone);
+      yield* withWsRpcClient(wsUrl, (client) =>
+        Effect.gen(function* () {
+          const main = yield* client[WS_METHODS.terminalResolveWorkspace]({
+            projectId: defaultProjectId,
+            worktreePath: null,
+          });
+          const linked = yield* client[WS_METHODS.terminalResolveWorkspace]({
+            projectId: defaultProjectId,
+            worktreePath: worktree,
+          });
+          const linkedAgain = yield* client[WS_METHODS.terminalResolveWorkspace]({
+            projectId: defaultProjectId,
+            worktreePath: path.join(worktree, "."),
+          });
+          assert.equal(linked.id, linkedAgain.id);
+          assert.notEqual(linked.id, main.id);
+          const foreign = yield* client[WS_METHODS.terminalResolveWorkspace]({
+            projectId: defaultProjectId,
+            worktreePath: clone,
+          }).pipe(Effect.result);
+          assert.equal(foreign._tag, "Failure");
+          const mainSession = yield* client[WS_METHODS.terminalOpen]({
+            workspaceId: main.id,
+            terminalId: "term-1",
+            cwd: main.cwd,
+          });
+          const linkedSession = yield* client[WS_METHODS.terminalOpen]({
+            workspaceId: linked.id,
+            terminalId: "term-1",
+            cwd: linked.cwd,
+            worktreePath: linked.cwd,
+          });
+          assert.notEqual(mainSession.pid, linkedSession.pid);
+          yield* git("switch", "-c", "changed-in-place");
+          const switched = yield* client[WS_METHODS.terminalResolveWorkspace]({
+            projectId: defaultProjectId,
+            worktreePath: null,
+          });
+          assert.equal(switched.id, main.id);
+          assert.equal(ptyAdapter.spawnInputs.length, 2);
+        }),
+      );
+    }).pipe(Effect.provide(Layer.mergeAll(NodeHttpServer.layerTest, ProcessRunner.layer))),
+  );
+
+  it.effect("reattaches after disconnect without resurrecting a terminated shared terminal", () =>
+    Effect.gen(function* () {
+      const { wsUrl, ptyAdapter } = yield* createTerminalRpcFixture();
+      const opened = yield* withWsRpcClient(wsUrl, (client) =>
+        Effect.gen(function* () {
+          const workspace = yield* client[WS_METHODS.terminalResolveWorkspace]({
+            projectId: defaultProjectId,
+            worktreePath: null,
+          });
+          return yield* client[WS_METHODS.terminalOpen]({
+            workspaceId: workspace.id,
+            terminalId: "term-1",
+            cwd: workspace.cwd,
+          });
+        }),
+      );
+      yield* withWsRpcClient(wsUrl, (client) =>
+        Effect.gen(function* () {
+          const input = {
+            workspaceId: opened.workspaceId,
+            terminalId: opened.terminalId,
+            cwd: opened.cwd,
+          };
+          const reconnected = yield* client[WS_METHODS.terminalAttach](input).pipe(Stream.runHead);
+          assertTrue(Option.isSome(reconnected) && reconnected.value.type === "snapshot");
+          assert.equal(reconnected.value.snapshot.pid, opened.pid);
+          yield* client[WS_METHODS.terminalClose](input);
+          const stale = yield* client[WS_METHODS.terminalAttach](input).pipe(Stream.runHead);
+          assertTrue(Option.isSome(stale) && stale.value.type === "snapshot");
+          assert.equal(stale.value.snapshot.pid, null);
+          assert.equal(stale.value.snapshot.status, "closed");
+          assert.equal(ptyAdapter.spawnInputs.length, 1);
+        }),
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("rejects delayed input for a replaced terminal process", () =>
+    Effect.gen(function* () {
+      const { wsUrl, ptyAdapter } = yield* createTerminalRpcFixture();
+      yield* withWsRpcClient(wsUrl, (client) =>
+        Effect.gen(function* () {
+          const workspace = yield* client[WS_METHODS.terminalResolveWorkspace]({
+            projectId: defaultProjectId,
+            worktreePath: null,
+          });
+          const input = {
+            workspaceId: workspace.id,
+            terminalId: "term-1",
+            cwd: workspace.cwd,
+            cols: 80,
+            rows: 24,
+          };
+          const opened = yield* client[WS_METHODS.terminalOpen](input);
+          const restarted = yield* client[WS_METHODS.terminalRestart]({
+            ...input,
+            generation: opened.generation,
+          });
+          const staleWrite = yield* client[WS_METHODS.terminalWrite]({
+            ...input,
+            generation: opened.generation,
+            data: "wrong process\r",
+          }).pipe(Effect.result);
+          assert.equal(staleWrite._tag, "Failure");
+          assert.notEqual(opened.generation, restarted.generation);
+          assert.deepEqual(ptyAdapter.processes[1]?.writes, []);
+        }),
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("restores saved terminal output after a server restart without launching a shell", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-terminal-restart-" });
+      const opened = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const { wsUrl, ptyAdapter } = yield* createTerminalRpcFixture({ cwd });
+          return yield* withWsRpcClient(wsUrl, (client) =>
+            Effect.gen(function* () {
+              const workspace = yield* client[WS_METHODS.terminalResolveWorkspace]({
+                projectId: defaultProjectId,
+                worktreePath: null,
+              });
+              const session = yield* client[WS_METHODS.terminalOpen]({
+                workspaceId: workspace.id,
+                terminalId: "term-1",
+                cwd: workspace.cwd,
+              });
+              ptyAdapter.processes[0]!.emitData("saved output\r\n");
+              yield* client[WS_METHODS.terminalAttach]({
+                workspaceId: workspace.id,
+                terminalId: "term-1",
+              }).pipe(
+                Stream.filter((event) =>
+                  event.type === "snapshot"
+                    ? event.snapshot.history.includes("saved output")
+                    : event.type === "output" && event.data.includes("saved output"),
+                ),
+                Stream.runHead,
+              );
+              return session;
+            }),
+          );
+        }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+      );
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const { wsUrl, ptyAdapter } = yield* createTerminalRpcFixture({ cwd });
+          yield* withWsRpcClient(wsUrl, (client) =>
+            Effect.gen(function* () {
+              const restored = yield* client[WS_METHODS.terminalAttach]({
+                workspaceId: opened.workspaceId,
+                terminalId: "term-1",
+              }).pipe(Stream.runHead);
+              assertTrue(Option.isSome(restored) && restored.value.type === "snapshot");
+              assert.equal(restored.value.snapshot.pid, null);
+              assert.equal(restored.value.snapshot.status, "exited");
+              assert.include(restored.value.snapshot.history, "saved output");
+              assert.equal(ptyAdapter.spawnInputs.length, 0);
+            }),
+          );
+        }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+      );
+    }).pipe(TestClock.withLive),
+  );
+
+  it.effect(
+    "runs a task once in a dedicated terminal without writing into the interactive shell",
+    () =>
+      Effect.gen(function* () {
+        const { wsUrl, ptyAdapter } = yield* createTerminalRpcFixture();
+        yield* withWsRpcClient(wsUrl, (client) =>
+          Effect.gen(function* () {
+            const workspace = yield* client[WS_METHODS.terminalResolveWorkspace]({
+              projectId: defaultProjectId,
+              worktreePath: null,
+            });
+            yield* client[WS_METHODS.terminalOpen]({
+              workspaceId: workspace.id,
+              terminalId: "term-1",
+              cwd: workspace.cwd,
+            });
+            const task = {
+              workspaceId: workspace.id,
+              terminalId: "task-request-1",
+              cwd: workspace.cwd,
+              command: "echo task\r",
+            };
+            const first = yield* client[WS_METHODS.terminalRunTask](task);
+            const retried = yield* client[WS_METHODS.terminalRunTask](task);
+            assert.equal(first.pid, retried.pid);
+            assert.equal(first.kind, "task");
+            assert.equal(ptyAdapter.spawnInputs.length, 2);
+            assert.deepEqual(ptyAdapter.processes[0]?.writes, []);
+            assert.deepEqual(ptyAdapter.processes[1]?.writes, ["echo task\r"]);
+          }),
+        );
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect(
+    "preserves shared terminals through thread cleanup and limits project cleanup to its owner",
+    () =>
+      Effect.gen(function* () {
+        const { wsUrl, ptyAdapter } = yield* createTerminalRpcFixture();
+        yield* withWsRpcClient(wsUrl, (client) =>
+          Effect.gen(function* () {
+            const main = yield* client[WS_METHODS.terminalResolveWorkspace]({
+              projectId: defaultProjectId,
+              worktreePath: null,
+            });
+            const other = yield* client[WS_METHODS.terminalResolveWorkspace]({
+              projectId: ProjectId.make("another-project"),
+              worktreePath: null,
+            });
+            const input = { workspaceId: main.id, terminalId: "term-1", cwd: main.cwd };
+            const opened = yield* client[WS_METHODS.terminalOpen](input);
+            yield* client[WS_METHODS.terminalOpen]({ ...input, workspaceId: other.id });
+            yield* client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+              type: "thread.archive",
+              commandId: CommandId.make("terminal-archive"),
+              threadId: ThreadId.make("thread-1"),
+            });
+            yield* client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+              type: "thread.delete",
+              commandId: CommandId.make("terminal-delete"),
+              threadId: ThreadId.make("thread-1"),
+            });
+            const afterCleanup = yield* client[WS_METHODS.terminalOpen](input);
+            assert.equal(afterCleanup.pid, opened.pid);
+            assert.equal(ptyAdapter.processes[0]?.killed, false);
+            const removal = yield* client[WS_METHODS.vcsRemoveWorktree]({
+              cwd: main.cwd,
+              path: main.cwd,
+              force: true,
+            }).pipe(Effect.result);
+            assert.equal(removal._tag, "Failure");
+            assert.equal(ptyAdapter.processes[0]?.killed, false);
+            yield* client[ORCHESTRATION_WS_METHODS.dispatchCommand]({
+              type: "project.delete",
+              commandId: CommandId.make("terminal-project-delete"),
+              projectId: defaultProjectId,
+            });
+            assert.equal(ptyAdapter.processes[0]?.killed, true);
+            assert.equal(ptyAdapter.processes[1]?.killed, false);
+            const stale = yield* client[WS_METHODS.terminalOpen](input).pipe(Effect.result);
+            assert.equal(stale._tag, "Failure");
+          }),
+        );
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("keeps ambiguous legacy transcripts separate and read-only", () =>
+    Effect.gen(function* () {
+      const { wsUrl, cwd, ptyAdapter } = yield* createTerminalRpcFixture();
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      yield* fs.writeFileString(path.join(cwd, "logs", "old-thread-a.log"), "first transcript");
+      yield* fs.writeFileString(path.join(cwd, "logs", "old-thread-b.log"), "second transcript");
+      yield* withWsRpcClient(wsUrl, (client) =>
+        Effect.gen(function* () {
+          const listed = yield* client[WS_METHODS.terminalLegacyHistory]({});
+          assert.equal(listed.histories.length, 2);
+          const first = yield* client[WS_METHODS.terminalLegacyHistory]({
+            historyId: "old-thread-a.log",
+          });
+          const second = yield* client[WS_METHODS.terminalLegacyHistory]({
+            historyId: "old-thread-b.log",
+          });
+          assert.equal(first.text, "first transcript");
+          assert.equal(second.text, "second transcript");
+          const outside = yield* client[WS_METHODS.terminalLegacyHistory]({
+            historyId: "../other.log",
+          }).pipe(Effect.result);
+          assert.equal(outside._tag, "Failure");
+          assert.equal(ptyAdapter.spawnInputs.length, 0);
+        }),
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("selects a live interactive primary and allocates one only on explicit open", () =>
+    Effect.gen(function* () {
+      const { wsUrl, ptyAdapter } = yield* createTerminalRpcFixture();
+      yield* withWsRpcClient(wsUrl, (client) =>
+        Effect.gen(function* () {
+          const workspace = yield* client[WS_METHODS.terminalResolveWorkspace]({
+            projectId: defaultProjectId,
+            worktreePath: null,
+          });
+          const input = { workspaceId: workspace.id, terminalId: "term-1", cwd: workspace.cwd };
+          const first = yield* client[WS_METHODS.terminalOpen]({ ...input, selectPrimary: true });
+          const extra = yield* client[WS_METHODS.terminalOpen]({ ...input, terminalId: "extra" });
+          yield* client[WS_METHODS.terminalClose]({ ...input, generation: first.generation });
+          const promoted = yield* client[WS_METHODS.terminalOpen]({
+            ...input,
+            selectPrimary: true,
+          });
+          assert.equal(promoted.terminalId, extra.terminalId);
+          assert.equal(promoted.pid, extra.pid);
+          assert.equal(promoted.primary, true);
+          yield* client[WS_METHODS.terminalClose]({
+            ...input,
+            terminalId: extra.terminalId,
+            generation: extra.generation,
+          });
+          const old = yield* client[WS_METHODS.terminalAttach](input).pipe(Stream.runHead);
+          assertTrue(Option.isSome(old) && old.value.type === "snapshot");
+          assert.equal(old.value.snapshot.status, "closed");
+          assert.equal(ptyAdapter.spawnInputs.length, 2);
+          const next = yield* client[WS_METHODS.terminalOpen]({ ...input, selectPrimary: true });
+          assert.notEqual(next.terminalId, first.terminalId);
+          assert.equal(ptyAdapter.spawnInputs.length, 3);
+        }),
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("reports an unknown task outcome without replaying a partially created task", () =>
+    Effect.gen(function* () {
+      const { wsUrl, ptyAdapter } = yield* createTerminalRpcFixture();
+      yield* withWsRpcClient(wsUrl, (client) =>
+        Effect.gen(function* () {
+          const workspace = yield* client[WS_METHODS.terminalResolveWorkspace]({
+            projectId: defaultProjectId,
+            worktreePath: null,
+          });
+          const input = {
+            workspaceId: workspace.id,
+            terminalId: "task-ambiguous",
+            cwd: workspace.cwd,
+          };
+          yield* client[WS_METHODS.terminalOpen](input);
+          const result = yield* client[WS_METHODS.terminalRunTask]({
+            ...input,
+            command: "do-not-replay\r",
+          }).pipe(Effect.result);
+          assert.equal(result._tag, "Failure");
+          assert.deepEqual(ptyAdapter.processes[0]!.writes, []);
+        }),
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("requires current terminal generations before confirmed checkout removal", () =>
+    Effect.gen(function* () {
+      const { wsUrl, ptyAdapter } = yield* createTerminalRpcFixture();
+      yield* withWsRpcClient(wsUrl, (client) =>
+        Effect.gen(function* () {
+          const workspace = yield* client[WS_METHODS.terminalResolveWorkspace]({
+            projectId: defaultProjectId,
+            worktreePath: null,
+          });
+          const input = { workspaceId: workspace.id, terminalId: "term-1", cwd: workspace.cwd };
+          const session = yield* client[WS_METHODS.terminalOpen](input);
+          const blocked = yield* client[WS_METHODS.vcsRemoveWorktree]({
+            cwd: workspace.cwd,
+            path: workspace.cwd,
+          }).pipe(Effect.result);
+          assert.equal(blocked._tag, "Failure");
+          assert.equal(ptyAdapter.processes[0]!.killed, false);
+          const confirmed = [
+            {
+              workspaceId: workspace.id,
+              terminalId: session.terminalId,
+              generation: session.generation!,
+              label: session.label,
+            },
+          ];
+          yield* client[WS_METHODS.terminalRestart]({
+            ...input,
+            generation: session.generation,
+            cols: 80,
+            rows: 24,
+          });
+          const stale = yield* client[WS_METHODS.vcsRemoveWorktree]({
+            cwd: workspace.cwd,
+            path: workspace.cwd,
+            confirmedTerminalSessions: confirmed,
+          }).pipe(Effect.result);
+          assert.equal(stale._tag, "Failure");
+          assert.equal(ptyAdapter.processes[1]!.killed, false);
+        }),
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("routes websocket rpc terminal methods", () =>
     Effect.gen(function* () {
       const snapshot = {
-        threadId: "thread-1",
+        workspaceId: "thread-1",
         terminalId: "default",
         cwd: "/tmp/project",
         worktreePath: null,
@@ -7399,6 +7924,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       yield* buildAppUnderTest({
         layers: {
           terminalManager: {
+            validateWorkspace: () => Effect.void,
             open: () => Effect.succeed(snapshot),
             write: () => Effect.void,
             resize: () => Effect.void,
@@ -7414,7 +7940,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const opened = yield* Effect.scoped(
         withWsRpcClient(wsUrl, (client) =>
           client[WS_METHODS.terminalOpen]({
-            threadId: "thread-1",
+            workspaceId: "thread-1",
             terminalId: "default",
             cwd: "/tmp/project",
           }),
@@ -7425,7 +7951,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       yield* Effect.scoped(
         withWsRpcClient(wsUrl, (client) =>
           client[WS_METHODS.terminalWrite]({
-            threadId: "thread-1",
+            workspaceId: "thread-1",
             terminalId: "default",
             data: "echo hi\n",
           }),
@@ -7435,7 +7961,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       yield* Effect.scoped(
         withWsRpcClient(wsUrl, (client) =>
           client[WS_METHODS.terminalResize]({
-            threadId: "thread-1",
+            workspaceId: "thread-1",
             terminalId: "default",
             cols: 120,
             rows: 40,
@@ -7446,7 +7972,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       yield* Effect.scoped(
         withWsRpcClient(wsUrl, (client) =>
           client[WS_METHODS.terminalClear]({
-            threadId: "thread-1",
+            workspaceId: "thread-1",
             terminalId: "default",
           }),
         ),
@@ -7455,7 +7981,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const restarted = yield* Effect.scoped(
         withWsRpcClient(wsUrl, (client) =>
           client[WS_METHODS.terminalRestart]({
-            threadId: "thread-1",
+            workspaceId: "thread-1",
             terminalId: "default",
             cwd: "/tmp/project",
             cols: 120,
@@ -7468,7 +7994,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       yield* Effect.scoped(
         withWsRpcClient(wsUrl, (client) =>
           client[WS_METHODS.terminalClose]({
-            threadId: "thread-1",
+            workspaceId: "thread-1",
             terminalId: "default",
           }),
         ),
@@ -7479,12 +8005,13 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
   it.effect("routes websocket rpc terminal.write errors", () =>
     Effect.gen(function* () {
       const terminalError = new TerminalNotRunningError({
-        threadId: "thread-1",
+        workspaceId: "thread-1",
         terminalId: "default",
       });
       yield* buildAppUnderTest({
         layers: {
           terminalManager: {
+            validateWorkspace: () => Effect.void,
             write: () => Effect.fail(terminalError),
           },
         },
@@ -7494,7 +8021,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const result = yield* Effect.scoped(
         withWsRpcClient(wsUrl, (client) =>
           client[WS_METHODS.terminalWrite]({
-            threadId: "thread-1",
+            workspaceId: "thread-1",
             terminalId: "default",
             data: "echo fail\n",
           }),

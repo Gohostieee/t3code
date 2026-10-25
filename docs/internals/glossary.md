@@ -179,3 +179,7 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [22]: ../../apps/server/src/checkpointing/Utils.ts
 [23]: ../../apps/server/src/checkpointing/Diffs.ts
 [24]: ./overview.md
+
+## Terminal workspace
+
+An environment-local project checkout that owns shared user terminal sessions. Its identity follows the project and canonical directory, including directory replacement, rather than a thread or branch name. The main checkout and each linked worktree have separate terminal workspaces. See [Terminal checkout ownership](project-terminal-ownership.md).

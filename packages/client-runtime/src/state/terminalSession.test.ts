@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { EnvironmentId, TerminalSessionSnapshot, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, TerminalSessionSnapshot } from "@t3tools/contracts";
 
 import {
+  terminalBufferStateFromSnapshot,
   applyTerminalAttachStreamEvent,
   applyTerminalMetadataStreamEvent,
   combineTerminalSessionState,
@@ -12,12 +13,12 @@ import {
 
 const TARGET = {
   environmentId: EnvironmentId.make("env-local"),
-  threadId: ThreadId.make("thread-1"),
+  workspaceId: "workspace-1",
   terminalId: "term-1",
 } as const;
 
 const BASE_SNAPSHOT: TerminalSessionSnapshot = {
-  threadId: TARGET.threadId,
+  workspaceId: TARGET.workspaceId,
   terminalId: TARGET.terminalId,
   cwd: "/repo",
   worktreePath: null,
@@ -31,12 +32,21 @@ const BASE_SNAPSHOT: TerminalSessionSnapshot = {
 };
 
 describe("terminal session reducers", () => {
+  it("does not retain unbounded snapshot output in fallback metadata", () => {
+    const state = terminalBufferStateFromSnapshot(
+      { ...BASE_SNAPSHOT, history: "x".repeat(1024), sequence: 10 },
+      32,
+    );
+    expect(state.buffer).toHaveLength(32);
+    expect(state.summary).not.toHaveProperty("history");
+    expect(state.summary).not.toHaveProperty("sequence");
+  });
   it("prefers live attach status over stale metadata after the attach stream starts", () => {
     const summary = applyTerminalMetadataStreamEvent([], {
       type: "snapshot",
       terminals: [
         {
-          threadId: BASE_SNAPSHOT.threadId,
+          workspaceId: BASE_SNAPSHOT.workspaceId,
           terminalId: BASE_SNAPSHOT.terminalId,
           cwd: BASE_SNAPSHOT.cwd,
           worktreePath: BASE_SNAPSHOT.worktreePath,
@@ -52,7 +62,7 @@ describe("terminal session reducers", () => {
     })[0]!;
     const attached = applyTerminalAttachStreamEvent(EMPTY_TERMINAL_BUFFER_STATE, {
       type: "error",
-      threadId: TARGET.threadId,
+      workspaceId: TARGET.workspaceId,
       terminalId: TARGET.terminalId,
       message: "Terminal disconnected.",
     });
@@ -69,7 +79,7 @@ describe("terminal session reducers", () => {
       type: "snapshot",
       terminals: [
         {
-          threadId: BASE_SNAPSHOT.threadId,
+          workspaceId: BASE_SNAPSHOT.workspaceId,
           terminalId: BASE_SNAPSHOT.terminalId,
           cwd: BASE_SNAPSHOT.cwd,
           worktreePath: BASE_SNAPSHOT.worktreePath,
@@ -118,7 +128,7 @@ describe("terminal session reducers", () => {
       snapshot,
       {
         type: "output",
-        threadId: TARGET.threadId,
+        workspaceId: TARGET.workspaceId,
         terminalId: TARGET.terminalId,
         data: " world",
       },
@@ -138,7 +148,7 @@ describe("terminal session reducers", () => {
       type: "snapshot",
       terminals: [
         {
-          threadId: BASE_SNAPSHOT.threadId,
+          workspaceId: BASE_SNAPSHOT.workspaceId,
           terminalId: BASE_SNAPSHOT.terminalId,
           cwd: BASE_SNAPSHOT.cwd,
           worktreePath: BASE_SNAPSHOT.worktreePath,
@@ -161,7 +171,7 @@ describe("terminal session reducers", () => {
     });
     const removed = applyTerminalMetadataStreamEvent(updated, {
       type: "remove",
-      threadId: TARGET.threadId,
+      workspaceId: TARGET.workspaceId,
       terminalId: TARGET.terminalId,
     });
 
@@ -175,7 +185,7 @@ describe("terminal session reducers", () => {
       EMPTY_TERMINAL_BUFFER_STATE,
       {
         type: "output",
-        threadId: TARGET.threadId,
+        workspaceId: TARGET.workspaceId,
         terminalId: TARGET.terminalId,
         data: "🙂🙂",
       },

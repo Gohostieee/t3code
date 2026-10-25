@@ -51,7 +51,23 @@ const makeTerminalManagerLayer = (
   overrides: Pick<TerminalManager.TerminalManager["Service"], "open" | "write">,
 ) =>
   Layer.succeed(TerminalManager.TerminalManager, {
+    legacyHistory: () => Effect.succeed({ histories: [], text: null }),
+    closeProject: () => Effect.void,
+    withCheckoutRemoval: (_, operation) => operation,
+    validateWorkspace: () => Effect.void,
+    listWorkspaces: () => Effect.succeed([]),
+    resolveWorkspace: (input) => Effect.succeed({ ...input, id: "workspace-1" }),
     ...overrides,
+    runTask: ({ command, ...input }) =>
+      overrides.open(input).pipe(
+        Effect.tap(() =>
+          overrides.write({
+            workspaceId: input.workspaceId,
+            terminalId: input.terminalId,
+            data: command,
+          }),
+        ),
+      ),
     attachStream: () => Effect.die(new Error("unused")),
     resize: () => Effect.void,
     clear: () => Effect.void,
@@ -95,8 +111,8 @@ describe("ProjectSetupScriptRunner", () => {
     () => {
       const open = vi.fn(() =>
         Effect.succeed({
-          threadId: "thread-1",
-          terminalId: "setup-setup",
+          workspaceId: "workspace-1",
+          terminalId: "task-setup-thread-1-setup",
           cwd: "/repo/worktrees/a",
           worktreePath: "/repo/worktrees/a",
           status: "running" as const,
@@ -104,7 +120,7 @@ describe("ProjectSetupScriptRunner", () => {
           history: "",
           exitCode: null,
           exitSignal: null,
-          label: "setup-setup",
+          label: "task-setup-thread-1-setup",
           updatedAt: "2026-01-01T00:00:00.000Z",
         }),
       );
@@ -131,12 +147,12 @@ describe("ProjectSetupScriptRunner", () => {
           status: "started",
           scriptId: "setup",
           scriptName: "Setup",
-          terminalId: "setup-setup",
+          terminalId: "task-setup-thread-1-setup",
           cwd: "/repo/worktrees/a",
         });
         expect(open).toHaveBeenCalledWith({
-          threadId: "thread-1",
-          terminalId: "setup-setup",
+          workspaceId: "workspace-1",
+          terminalId: "task-setup-thread-1-setup",
           cwd: "/repo/worktrees/a",
           worktreePath: "/repo/worktrees/a",
           env: {
@@ -145,8 +161,8 @@ describe("ProjectSetupScriptRunner", () => {
           },
         });
         expect(write).toHaveBeenCalledWith({
-          threadId: "thread-1",
-          terminalId: "setup-setup",
+          workspaceId: "workspace-1",
+          terminalId: "task-setup-thread-1-setup",
           data: "bun install\r",
         });
       }).pipe(Effect.provide(testLayer(project, { open, write })));

@@ -1,3 +1,4 @@
+import { ProjectTerminalLauncher } from "../terminal/ProjectTerminalRouteScreen";
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
 import { useNavigation } from "@react-navigation/native";
@@ -112,6 +113,7 @@ export function HomeRouteScreen() {
             />
           }
         />
+        <ProjectTerminalLauncher />
         <WorkspaceEmptyDetail
           onStartNewTask={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
         />
@@ -143,6 +145,7 @@ export function HomeRouteScreen() {
           onThreadSortOrderChange={setThreadSortOrder}
         />
 
+        <ProjectTerminalLauncher />
         <HomeScreen
           catalogState={catalogState}
           environments={environments}

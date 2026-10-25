@@ -1,6 +1,7 @@
+import { uuidv4 } from "../../lib/uuid";
 import { type KnownTerminalSession } from "@t3tools/client-runtime/state/terminal";
-import { DEFAULT_TERMINAL_ID, type ProjectScript } from "@t3tools/contracts";
-import { nextTerminalId, resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
+import { type ProjectScript } from "@t3tools/contracts";
+import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
 
@@ -67,18 +68,8 @@ export function getTerminalStatusLabel(input: {
  * (`activeRouteTerminalId`) as occupied so an empty session list on the primary route
  * still advances to `term-2` instead of `replace`-navigating to the same `default` tab.
  */
-export function nextOpenTerminalId(input: {
-  readonly listedTerminalIds: ReadonlyArray<string>;
-  readonly activeRouteTerminalId?: string | null;
-}): string {
-  const listed = input.listedTerminalIds.filter((id) => id.trim().length > 0);
-  const routeId = input.activeRouteTerminalId?.trim() ? input.activeRouteTerminalId : null;
-
-  if (!routeId || listed.includes(routeId)) {
-    return nextTerminalId(listed);
-  }
-
-  return nextTerminalId([...listed, routeId]);
+export function nextOpenTerminalId(): string {
+  return uuidv4();
 }
 
 export function buildTerminalMenuSessions(input: {
@@ -143,15 +134,8 @@ export function previousLiveTerminalId(input: {
   return (below[below.length - 1] ?? live[0])?.terminalId ?? null;
 }
 
-export function resolveProjectScriptTerminalId(input: {
-  readonly existingTerminalIds: ReadonlyArray<string>;
-  readonly hasRunningTerminal: boolean;
-}): string {
-  if (!input.hasRunningTerminal) {
-    return DEFAULT_TERMINAL_ID;
-  }
-
-  return nextTerminalId(input.existingTerminalIds);
+export function resolveProjectScriptTerminalId(): string {
+  return `task-${uuidv4()}`;
 }
 
 export function projectScriptMenuLabel(script: ProjectScript): string {

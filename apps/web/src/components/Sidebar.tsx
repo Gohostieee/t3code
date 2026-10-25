@@ -1,3 +1,4 @@
+import { openProjectTerminal } from "../projectTerminalStore";
 import {
   ArchiveIcon,
   ArrowUpDownIcon,
@@ -83,7 +84,8 @@ import {
   useThreadShells,
   useThreadShellsForProjectRefs,
 } from "../state/entities";
-import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import { selectWorkspaceTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import { useThreadTerminalWorkspace } from "../state/terminalWorkspace";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useThreadDiscoveredPorts } from "../portDiscoveryState";
 import { openDiscoveredPort } from "./preview/openDiscoveredPort";
@@ -1492,7 +1494,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
                             ? [`Environment: ${member.environmentLabel}`]
                             : []),
                           "This permanently clears conversation history for those threads.",
-                          "This removes only this project entry.",
+                          "This removes the project entry and terminates its shared terminals. Files on disk are kept.",
                           "This action cannot be undone.",
                         ].join("\n")
                       : [
@@ -1501,7 +1503,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
                           ...(member.environmentLabel
                             ? [`Environment: ${member.environmentLabel}`]
                             : []),
-                          "This removes only this project entry.",
+                          "This removes the project entry and terminates its shared terminals. Files on disk are kept.",
                         ].join("\n"),
                   );
                   if (!confirmed) {
@@ -1549,7 +1551,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         `Remove project "${member.title}"?`,
         `Path: ${member.workspaceRoot}`,
         ...(member.environmentLabel ? [`Environment: ${member.environmentLabel}`] : []),
-        "This removes only this project entry.",
+        "This removes the project entry and terminates its shared terminals. Files on disk are kept.",
       ].join("\n");
       const confirmed = await api.dialogs.confirm(message);
       if (!confirmed) {
@@ -1587,7 +1589,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
         const actionHandlers = new Map<string, () => Promise<void> | void>();
         const makeLeaf = (
-          action: "rename" | "grouping" | "copy-path" | "delete",
+          action: "terminal" | "rename" | "grouping" | "copy-path" | "delete",
           member: SidebarProjectGroupMember,
           options?: {
             destructive?: boolean;
@@ -1597,6 +1599,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           const id = `${action}:${member.physicalProjectKey}`;
           actionHandlers.set(id, () => {
             switch (action) {
+              case "terminal":
+                openProjectTerminal({ environmentId: member.environmentId, projectId: member.id });
+                return;
               case "rename":
                 openProjectRenameDialog(member);
                 return;
@@ -1620,7 +1625,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         };
 
         const buildTargetedItem = (
-          action: "rename" | "grouping" | "copy-path" | "delete",
+          action: "terminal" | "rename" | "grouping" | "copy-path" | "delete",
           label: string,
           options?: {
             destructive?: boolean;
@@ -1654,6 +1659,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
         const clicked = await api.contextMenu.show(
           [
+            buildTargetedItem("terminal", "Open project terminal"),
             buildTargetedItem("rename", "Rename"),
             buildTargetedItem("grouping", "Group into..."),
             buildTargetedItem("copy-path", "Copy Path"),
@@ -3016,9 +3022,13 @@ export default function Sidebar() {
     [routeDraftThread, routeTarget],
   );
   const routeThreadKey = routeThreadRef ? scopedThreadKey(routeThreadRef) : null;
+  const routeTerminalWorkspace = useThreadTerminalWorkspace(routeThreadRef);
   const routeTerminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef
-      ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
+      ? selectWorkspaceTerminalUiState(
+          state.terminalUiStateByWorkspaceKey,
+          routeTerminalWorkspace.ref,
+        ).terminalOpen
       : false,
   );
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);

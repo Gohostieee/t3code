@@ -1,4 +1,7 @@
+"use no memo";
 "use client";
+
+import { openProjectTerminal } from "../projectTerminalStore";
 
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { canCreateProjectInEnvironment } from "@t3tools/client-runtime/operations/projects";
@@ -38,6 +41,7 @@ import {
   SettingsIcon,
   SquarePenIcon,
   TextSearchIcon,
+  TerminalIcon,
 } from "lucide-react";
 import {
   useCallback,
@@ -86,7 +90,8 @@ import { isTerminalFocused } from "../lib/terminalFocus";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { getLatestThreadForProject, sortThreads } from "../lib/threadSort";
 import { cn, isMacPlatform, isWindowsPlatform, newProjectId } from "../lib/utils";
-import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import { selectWorkspaceTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import { useThreadTerminalWorkspace } from "../state/terminalWorkspace";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
 import {
   applyWslEnvironmentConfiguration,
@@ -138,6 +143,10 @@ import {
   buildSidebarProjectPickerEntries,
   buildSidebarProjectSnapshots,
 } from "../sidebarProjectGrouping";
+
+function ProjectTerminalIcon() {
+  return <TerminalIcon className={ITEM_ICON_CLASS} />;
+}
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 
@@ -381,9 +390,13 @@ export function CommandPalette({ children }: { children: ReactNode }) {
     select: (params) => resolveThreadRouteTarget(params),
   });
   const routeThreadRef = routeTarget?.kind === "server" ? routeTarget.threadRef : null;
+  const routeTerminalWorkspace = useThreadTerminalWorkspace(routeThreadRef);
   const terminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef
-      ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
+      ? selectWorkspaceTerminalUiState(
+          state.terminalUiStateByWorkspaceKey,
+          routeTerminalWorkspace.ref,
+        ).terminalOpen
       : false,
   );
   const previewOpen = useRightPanelStore((state) =>
@@ -975,6 +988,19 @@ function OpenCommandPaletteDialog(props: {
     [contextualProjectRef, handleNewThread, pickerProjects, projectGroupByTargetKey],
   );
 
+  const projectTerminalItems = useMemo(
+    () =>
+      buildProjectActionItems({
+        projects,
+        valuePrefix: "project-terminal",
+        searchTerms: (project) => ["terminal", project.workspaceRoot],
+        icon: ProjectTerminalIcon,
+        runProject: async (project) =>
+          openProjectTerminal({ environmentId: project.environmentId, projectId: project.id }),
+      }),
+    [projects],
+  );
+
   const allThreadItems = useMemo(
     () =>
       buildThreadActionItems({
@@ -1473,6 +1499,16 @@ function OpenCommandPaletteDialog(props: {
     run: async () => {
       await navigate({ to: "/settings" });
     },
+  });
+
+  actionItems.push({
+    kind: "submenu",
+    value: "action:project-terminal",
+    title: "Open project terminal...",
+    searchTerms: ["terminal", "shell", "project"],
+    icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
+    addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
+    groups: [{ value: "terminal-projects", label: "Projects", items: projectTerminalItems }],
   });
 
   const rootGroups = buildRootGroups({ actionItems, recentThreadItems });

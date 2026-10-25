@@ -2,6 +2,8 @@ import type { TerminalSummary } from "@t3tools/contracts";
 
 /** Human-readable label for a terminal tab; matches mobile and web sidebars. */
 export function getTerminalLabel(terminalId: string): string {
+  if (terminalId.startsWith("task-")) return "Task";
+  if (/^[\da-f]{8}-[\da-f-]{27}$/i.test(terminalId)) return "Terminal";
   const numericSuffix = /^term(?:inal)?-(\d+)$/i.exec(terminalId)?.[1];
   if (numericSuffix) {
     return `Terminal ${numericSuffix}`;

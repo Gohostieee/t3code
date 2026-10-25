@@ -1,3 +1,5 @@
+import { vi } from "vite-plus/test";
+vi.mock("../../lib/uuid", () => ({ uuidv4: () => crypto.randomUUID() }));
 import { describe, expect, it } from "vite-plus/test";
 
 import { type KnownTerminalSession } from "@t3tools/client-runtime/state/terminal";
@@ -37,13 +39,13 @@ function makeKnownSession(input: {
   return {
     target: {
       environmentId: EnvironmentId.make("env-1"),
-      threadId: ThreadId.make("thread-1"),
+      workspaceId: ThreadId.make("thread-1"),
       terminalId: input.terminalId,
     },
     state: {
       summary: input.cwd
         ? {
-            threadId: "thread-1",
+            workspaceId: "thread-1",
             terminalId: input.terminalId,
             cwd: input.cwd,
             worktreePath: input.cwd,
@@ -136,27 +138,11 @@ describe("nextTerminalId", () => {
 });
 
 describe("nextOpenTerminalId", () => {
-  it("matches nextTerminalId when not on a terminal route", () => {
-    expect(nextOpenTerminalId({ listedTerminalIds: [] })).toBe(DEFAULT_TERMINAL_ID);
-    expect(nextOpenTerminalId({ listedTerminalIds: [DEFAULT_TERMINAL_ID] })).toBe("term-2");
-  });
-
-  it("avoids the mounted primary tab when the session list is still empty", () => {
-    expect(
-      nextOpenTerminalId({
-        listedTerminalIds: [],
-        activeRouteTerminalId: DEFAULT_TERMINAL_ID,
-      }),
-    ).toBe("term-2");
-  });
-
-  it("does not double-count when the route id is already listed", () => {
-    expect(
-      nextOpenTerminalId({
-        listedTerminalIds: [DEFAULT_TERMINAL_ID],
-        activeRouteTerminalId: DEFAULT_TERMINAL_ID,
-      }),
-    ).toBe("term-2");
+  it("allocates independent identities for concurrent clients", () => {
+    const first = nextOpenTerminalId();
+    const second = nextOpenTerminalId();
+    expect(first).not.toBe(DEFAULT_TERMINAL_ID);
+    expect(first).not.toBe(second);
   });
 });
 
@@ -215,21 +201,10 @@ describe("previousLiveTerminalId", () => {
 });
 
 describe("resolveProjectScriptTerminalId", () => {
-  it("reuses the default shell when no terminal is running", () => {
-    expect(
-      resolveProjectScriptTerminalId({
-        existingTerminalIds: [DEFAULT_TERMINAL_ID],
-        hasRunningTerminal: false,
-      }),
-    ).toBe(DEFAULT_TERMINAL_ID);
-  });
-
-  it("opens a new terminal when a shell is already running", () => {
-    expect(
-      resolveProjectScriptTerminalId({
-        existingTerminalIds: [DEFAULT_TERMINAL_ID, "term-2", "term-4"],
-        hasRunningTerminal: true,
-      }),
-    ).toBe("term-3");
+  it("allocates a task session even when the interactive shell is idle", () => {
+    const first = resolveProjectScriptTerminalId();
+    const second = resolveProjectScriptTerminalId();
+    expect(first).toMatch(/^task-/);
+    expect(second).not.toBe(first);
   });
 });

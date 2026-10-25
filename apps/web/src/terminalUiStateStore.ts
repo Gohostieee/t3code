@@ -1,12 +1,15 @@
 /**
- * Single Zustand store for terminal UI state keyed by scoped thread identity.
+ * Single Zustand store for terminal UI state keyed by scoped workspace identity.
  *
  * Terminal UI transition helpers are intentionally private to keep the public
  * API constrained to store actions/selectors.
  */
 
-import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
-import { type ScopedThreadRef } from "@t3tools/contracts";
+import {
+  parseScopedTerminalWorkspaceKey,
+  scopedTerminalWorkspaceKey,
+} from "@t3tools/client-runtime/environment";
+import { type ScopedTerminalWorkspaceRef } from "@t3tools/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { resolveStorage } from "./lib/storage";
@@ -17,7 +20,7 @@ import {
   type ThreadTerminalGroup,
 } from "./types";
 
-interface ThreadTerminalUiState {
+interface WorkspaceTerminalUiState {
   terminalOpen: boolean;
   terminalHeight: number;
   terminalIds: string[];
@@ -26,12 +29,12 @@ interface ThreadTerminalUiState {
   activeTerminalGroupId: string;
 }
 
-// Keep the old storage key so existing drawer layout preferences migrate.
-const TERMINAL_UI_STATE_STORAGE_KEY = "t3code:terminal-state:v1";
+// Keep legacy thread layouts untouched; only checkout identities belong in this store.
+const TERMINAL_UI_STATE_STORAGE_KEY = "t3code:checkout-terminal-state:v1";
 
 interface PersistedTerminalUiStateStoreState {
-  terminalUiStateByThreadKey?: Record<string, ThreadTerminalUiState>;
-  terminalStateByThreadKey?: Record<string, ThreadTerminalUiState>;
+  terminalUiStateByWorkspaceKey?: Record<string, WorkspaceTerminalUiState>;
+  terminalStateByWorkspaceKey?: Record<string, WorkspaceTerminalUiState>;
 }
 
 export function migratePersistedTerminalUiStateStoreState(
@@ -39,19 +42,19 @@ export function migratePersistedTerminalUiStateStoreState(
   _version: number,
 ): PersistedTerminalUiStateStoreState {
   if (!persistedState || typeof persistedState !== "object") {
-    return { terminalUiStateByThreadKey: {} };
+    return { terminalUiStateByWorkspaceKey: {} };
   }
 
   const candidate = persistedState as PersistedTerminalUiStateStoreState;
-  const persistedUiStateByThreadKey =
-    candidate.terminalUiStateByThreadKey ?? candidate.terminalStateByThreadKey ?? {};
-  const terminalUiStateByThreadKey = Object.fromEntries(
-    Object.entries(persistedUiStateByThreadKey).filter(([threadKey]) =>
-      parseScopedThreadKey(threadKey),
+  const persistedUiStateByWorkspaceKey =
+    candidate.terminalUiStateByWorkspaceKey ?? candidate.terminalStateByWorkspaceKey ?? {};
+  const terminalUiStateByWorkspaceKey = Object.fromEntries(
+    Object.entries(persistedUiStateByWorkspaceKey).filter(([workspaceKey]) =>
+      parseScopedTerminalWorkspaceKey(workspaceKey),
     ),
   );
 
-  return { terminalUiStateByThreadKey };
+  return { terminalUiStateByWorkspaceKey };
 }
 
 function createTerminalUiStateStorage() {
@@ -166,9 +169,9 @@ function terminalGroupsEqual(left: ThreadTerminalGroup[], right: ThreadTerminalG
   return true;
 }
 
-function threadTerminalUiStateEqual(
-  left: ThreadTerminalUiState,
-  right: ThreadTerminalUiState,
+function workspaceTerminalUiStateEqual(
+  left: WorkspaceTerminalUiState,
+  right: WorkspaceTerminalUiState,
 ): boolean {
   return (
     left.terminalOpen === right.terminalOpen &&
@@ -180,7 +183,7 @@ function threadTerminalUiStateEqual(
   );
 }
 
-const DEFAULT_THREAD_TERMINAL_UI_STATE: ThreadTerminalUiState = Object.freeze({
+const DEFAULT_THREAD_TERMINAL_UI_STATE: WorkspaceTerminalUiState = Object.freeze({
   terminalOpen: false,
   terminalHeight: DEFAULT_THREAD_TERMINAL_HEIGHT,
   terminalIds: [],
@@ -189,7 +192,7 @@ const DEFAULT_THREAD_TERMINAL_UI_STATE: ThreadTerminalUiState = Object.freeze({
   activeTerminalGroupId: "",
 });
 
-function createDefaultThreadTerminalUiState(): ThreadTerminalUiState {
+function createDefaultWorkspaceTerminalUiState(): WorkspaceTerminalUiState {
   return {
     ...DEFAULT_THREAD_TERMINAL_UI_STATE,
     terminalIds: [...DEFAULT_THREAD_TERMINAL_UI_STATE.terminalIds],
@@ -197,11 +200,13 @@ function createDefaultThreadTerminalUiState(): ThreadTerminalUiState {
   };
 }
 
-function getDefaultThreadTerminalUiState(): ThreadTerminalUiState {
+function getDefaultWorkspaceTerminalUiState(): WorkspaceTerminalUiState {
   return DEFAULT_THREAD_TERMINAL_UI_STATE;
 }
 
-function normalizeThreadTerminalUiState(state: ThreadTerminalUiState): ThreadTerminalUiState {
+function normalizeWorkspaceTerminalUiState(
+  state: WorkspaceTerminalUiState,
+): WorkspaceTerminalUiState {
   const nextTerminalIds = normalizeTerminalIds(state.terminalIds);
   const activeTerminalId = nextTerminalIds.includes(state.activeTerminalId)
     ? state.activeTerminalId
@@ -215,7 +220,7 @@ function normalizeThreadTerminalUiState(state: ThreadTerminalUiState): ThreadTer
   const activeGroupIdFromTerminal =
     terminalGroups.find((group) => group.terminalIds.includes(activeTerminalId))?.id ?? null;
 
-  const normalized: ThreadTerminalUiState = {
+  const normalized: WorkspaceTerminalUiState = {
     terminalOpen: state.terminalOpen,
     terminalHeight:
       Number.isFinite(state.terminalHeight) && state.terminalHeight > 0
@@ -227,20 +232,20 @@ function normalizeThreadTerminalUiState(state: ThreadTerminalUiState): ThreadTer
     activeTerminalGroupId:
       activeGroupIdFromState ?? activeGroupIdFromTerminal ?? terminalGroups[0]?.id ?? "",
   };
-  return threadTerminalUiStateEqual(state, normalized) ? state : normalized;
+  return workspaceTerminalUiStateEqual(state, normalized) ? state : normalized;
 }
 
-function isDefaultThreadTerminalUiState(state: ThreadTerminalUiState): boolean {
-  const normalized = normalizeThreadTerminalUiState(state);
-  return threadTerminalUiStateEqual(normalized, DEFAULT_THREAD_TERMINAL_UI_STATE);
+function isDefaultWorkspaceTerminalUiState(state: WorkspaceTerminalUiState): boolean {
+  const normalized = normalizeWorkspaceTerminalUiState(state);
+  return workspaceTerminalUiStateEqual(normalized, DEFAULT_THREAD_TERMINAL_UI_STATE);
 }
 
 function isValidTerminalId(terminalId: string): boolean {
   return terminalId.trim().length > 0;
 }
 
-function terminalThreadKey(threadRef: ScopedThreadRef): string {
-  return scopedThreadKey(threadRef);
+function terminalWorkspaceKey(workspaceRef: ScopedTerminalWorkspaceRef): string {
+  return scopedTerminalWorkspaceKey(workspaceRef);
 }
 
 function copyTerminalGroups(groups: ThreadTerminalGroup[]): ThreadTerminalGroup[] {
@@ -252,12 +257,12 @@ function copyTerminalGroups(groups: ThreadTerminalGroup[]): ThreadTerminalGroup[
 }
 
 function upsertTerminalIntoGroups(
-  state: ThreadTerminalUiState,
+  state: WorkspaceTerminalUiState,
   terminalId: string,
   mode: "split" | "new",
   splitDirection: "horizontal" | "vertical" = "horizontal",
-): ThreadTerminalUiState {
-  const normalized = normalizeThreadTerminalUiState(state);
+): WorkspaceTerminalUiState {
+  const normalized = normalizeWorkspaceTerminalUiState(state);
   const effectiveMode: "split" | "new" = normalized.terminalIds.length === 0 ? "new" : mode;
   if (!isValidTerminalId(terminalId)) {
     return normalized;
@@ -283,7 +288,7 @@ function upsertTerminalIntoGroups(
     const usedGroupIds = new Set(terminalGroups.map((group) => group.id));
     const nextGroupId = assignUniqueGroupId(fallbackGroupId(terminalId), usedGroupIds);
     terminalGroups.push({ id: nextGroupId, terminalIds: [terminalId] });
-    return normalizeThreadTerminalUiState({
+    return normalizeWorkspaceTerminalUiState({
       ...normalized,
       terminalOpen: true,
       terminalIds,
@@ -337,7 +342,7 @@ function upsertTerminalIntoGroups(
     delete destinationGroup.splitDirection;
   }
 
-  return normalizeThreadTerminalUiState({
+  return normalizeWorkspaceTerminalUiState({
     ...normalized,
     terminalOpen: true,
     terminalIds,
@@ -347,8 +352,11 @@ function upsertTerminalIntoGroups(
   });
 }
 
-function setThreadTerminalOpen(state: ThreadTerminalUiState, open: boolean): ThreadTerminalUiState {
-  const normalized = normalizeThreadTerminalUiState(state);
+function setWorkspaceTerminalOpen(
+  state: WorkspaceTerminalUiState,
+  open: boolean,
+): WorkspaceTerminalUiState {
+  const normalized = normalizeWorkspaceTerminalUiState(state);
   if (open && normalized.terminalIds.length === 0) {
     return upsertTerminalIntoGroups(normalized, DEFAULT_THREAD_TERMINAL_ID, "new");
   }
@@ -356,37 +364,37 @@ function setThreadTerminalOpen(state: ThreadTerminalUiState, open: boolean): Thr
   return { ...normalized, terminalOpen: open };
 }
 
-function setThreadTerminalHeight(
-  state: ThreadTerminalUiState,
+function setWorkspaceTerminalHeight(
+  state: WorkspaceTerminalUiState,
   height: number,
-): ThreadTerminalUiState {
-  const normalized = normalizeThreadTerminalUiState(state);
+): WorkspaceTerminalUiState {
+  const normalized = normalizeWorkspaceTerminalUiState(state);
   if (!Number.isFinite(height) || height <= 0 || normalized.terminalHeight === height) {
     return normalized;
   }
   return { ...normalized, terminalHeight: height };
 }
 
-function splitThreadTerminal(
-  state: ThreadTerminalUiState,
+function splitWorkspaceTerminal(
+  state: WorkspaceTerminalUiState,
   terminalId: string,
   direction: "horizontal" | "vertical" = "horizontal",
-): ThreadTerminalUiState {
+): WorkspaceTerminalUiState {
   return upsertTerminalIntoGroups(state, terminalId, "split", direction);
 }
 
-function newThreadTerminal(
-  state: ThreadTerminalUiState,
+function newWorkspaceTerminal(
+  state: WorkspaceTerminalUiState,
   terminalId: string,
-): ThreadTerminalUiState {
+): WorkspaceTerminalUiState {
   return upsertTerminalIntoGroups(state, terminalId, "new");
 }
 
-function setThreadActiveTerminal(
-  state: ThreadTerminalUiState,
+function setWorkspaceActiveTerminal(
+  state: WorkspaceTerminalUiState,
   terminalId: string,
-): ThreadTerminalUiState {
-  const normalized = normalizeThreadTerminalUiState(state);
+): WorkspaceTerminalUiState {
+  const normalized = normalizeWorkspaceTerminalUiState(state);
   if (!normalized.terminalIds.includes(terminalId)) {
     return normalized;
   }
@@ -406,18 +414,18 @@ function setThreadActiveTerminal(
   };
 }
 
-function closeThreadTerminal(
-  state: ThreadTerminalUiState,
+function closeWorkspaceTerminal(
+  state: WorkspaceTerminalUiState,
   terminalId: string,
-): ThreadTerminalUiState {
-  const normalized = normalizeThreadTerminalUiState(state);
+): WorkspaceTerminalUiState {
+  const normalized = normalizeWorkspaceTerminalUiState(state);
   if (!normalized.terminalIds.includes(terminalId)) {
     return normalized;
   }
 
   const remainingTerminalIds = normalized.terminalIds.filter((id) => id !== terminalId);
   if (remainingTerminalIds.length === 0) {
-    return createDefaultThreadTerminalUiState();
+    return createDefaultWorkspaceTerminalUiState();
   }
 
   const closedTerminalIndex = normalized.terminalIds.indexOf(terminalId);
@@ -441,7 +449,7 @@ function closeThreadTerminal(
     terminalGroups[0]?.id ??
     fallbackGroupId(nextActiveTerminalId);
 
-  return normalizeThreadTerminalUiState({
+  return normalizeWorkspaceTerminalUiState({
     terminalOpen: normalized.terminalOpen,
     terminalHeight: normalized.terminalHeight,
     terminalIds: remainingTerminalIds,
@@ -451,11 +459,11 @@ function closeThreadTerminal(
   });
 }
 
-function reconcileThreadTerminalSessionIds(
-  state: ThreadTerminalUiState,
+function reconcileWorkspaceTerminalSessionIds(
+  state: WorkspaceTerminalUiState,
   nextIds: string[],
-): ThreadTerminalUiState {
-  const normalized = normalizeThreadTerminalUiState(state);
+): WorkspaceTerminalUiState {
+  const normalized = normalizeWorkspaceTerminalUiState(state);
   if (arraysEqual(normalized.terminalIds, nextIds)) {
     return normalized;
   }
@@ -468,7 +476,7 @@ function reconcileThreadTerminalSessionIds(
   const activeGroupIdFromTerminal =
     terminalGroups.find((group) => group.terminalIds.includes(nextActiveTerminalId))?.id ?? null;
 
-  return normalizeThreadTerminalUiState({
+  return normalizeWorkspaceTerminalUiState({
     ...normalized,
     terminalIds: nextIds,
     activeTerminalId: nextActiveTerminalId,
@@ -477,79 +485,80 @@ function reconcileThreadTerminalSessionIds(
   });
 }
 
-export function selectThreadTerminalUiState(
-  terminalUiStateByThreadKey: Record<string, ThreadTerminalUiState>,
-  threadRef: ScopedThreadRef | null | undefined,
-): ThreadTerminalUiState {
-  if (!threadRef || threadRef.threadId.length === 0) {
-    return getDefaultThreadTerminalUiState();
+export function selectWorkspaceTerminalUiState(
+  terminalUiStateByWorkspaceKey: Record<string, WorkspaceTerminalUiState>,
+  workspaceRef: ScopedTerminalWorkspaceRef | null | undefined,
+): WorkspaceTerminalUiState {
+  if (!workspaceRef || workspaceRef.workspaceId.length === 0) {
+    return getDefaultWorkspaceTerminalUiState();
   }
   return (
-    terminalUiStateByThreadKey[terminalThreadKey(threadRef)] ?? getDefaultThreadTerminalUiState()
+    terminalUiStateByWorkspaceKey[terminalWorkspaceKey(workspaceRef)] ??
+    getDefaultWorkspaceTerminalUiState()
   );
 }
 
-function updateTerminalUiStateByThreadKey(
-  terminalUiStateByThreadKey: Record<string, ThreadTerminalUiState>,
-  threadRef: ScopedThreadRef,
-  updater: (state: ThreadTerminalUiState) => ThreadTerminalUiState,
-): Record<string, ThreadTerminalUiState> {
-  if (threadRef.threadId.length === 0) {
-    return terminalUiStateByThreadKey;
+function updateTerminalUiStateByWorkspaceKey(
+  terminalUiStateByWorkspaceKey: Record<string, WorkspaceTerminalUiState>,
+  workspaceRef: ScopedTerminalWorkspaceRef,
+  updater: (state: WorkspaceTerminalUiState) => WorkspaceTerminalUiState,
+): Record<string, WorkspaceTerminalUiState> {
+  if (workspaceRef.workspaceId.length === 0) {
+    return terminalUiStateByWorkspaceKey;
   }
 
-  const threadKey = terminalThreadKey(threadRef);
-  const current = selectThreadTerminalUiState(terminalUiStateByThreadKey, threadRef);
+  const workspaceKey = terminalWorkspaceKey(workspaceRef);
+  const current = selectWorkspaceTerminalUiState(terminalUiStateByWorkspaceKey, workspaceRef);
   const next = updater(current);
   if (next === current) {
-    return terminalUiStateByThreadKey;
+    return terminalUiStateByWorkspaceKey;
   }
 
-  if (isDefaultThreadTerminalUiState(next)) {
-    if (terminalUiStateByThreadKey[threadKey] === undefined) {
-      return terminalUiStateByThreadKey;
+  if (isDefaultWorkspaceTerminalUiState(next)) {
+    if (terminalUiStateByWorkspaceKey[workspaceKey] === undefined) {
+      return terminalUiStateByWorkspaceKey;
     }
-    const { [threadKey]: _removed, ...rest } = terminalUiStateByThreadKey;
+    const { [workspaceKey]: _removed, ...rest } = terminalUiStateByWorkspaceKey;
     return rest;
   }
 
   return {
-    ...terminalUiStateByThreadKey,
-    [threadKey]: next,
+    ...terminalUiStateByWorkspaceKey,
+    [workspaceKey]: next,
   };
 }
 
 function updateSuppressedTerminalId(
-  suppressedTerminalIdsByThreadKey: Record<string, string[]>,
-  threadRef: ScopedThreadRef,
+  suppressedTerminalIdsByWorkspaceKey: Record<string, string[]>,
+  workspaceRef: ScopedTerminalWorkspaceRef,
   terminalId: string,
   suppressed: boolean,
 ): Record<string, string[]> {
   const normalizedTerminalId = terminalId.trim();
   if (normalizedTerminalId.length === 0) {
-    return suppressedTerminalIdsByThreadKey;
+    return suppressedTerminalIdsByWorkspaceKey;
   }
-  const threadKey = terminalThreadKey(threadRef);
-  const currentIds = suppressedTerminalIdsByThreadKey[threadKey] ?? [];
+  const workspaceKey = terminalWorkspaceKey(workspaceRef);
+  const currentIds = suppressedTerminalIdsByWorkspaceKey[workspaceKey] ?? [];
   const currentlySuppressed = currentIds.includes(normalizedTerminalId);
   if (currentlySuppressed === suppressed) {
-    return suppressedTerminalIdsByThreadKey;
+    return suppressedTerminalIdsByWorkspaceKey;
   }
   if (suppressed) {
     return {
-      ...suppressedTerminalIdsByThreadKey,
-      [threadKey]: [...currentIds, normalizedTerminalId],
+      ...suppressedTerminalIdsByWorkspaceKey,
+      [workspaceKey]: [...currentIds, normalizedTerminalId],
     };
   }
 
   const remainingIds = currentIds.filter((id) => id !== normalizedTerminalId);
   if (remainingIds.length > 0) {
     return {
-      ...suppressedTerminalIdsByThreadKey,
-      [threadKey]: remainingIds,
+      ...suppressedTerminalIdsByWorkspaceKey,
+      [workspaceKey]: remainingIds,
     };
   }
-  return removeRecordEntry(suppressedTerminalIdsByThreadKey, threadKey);
+  return removeRecordEntry(suppressedTerminalIdsByWorkspaceKey, workspaceKey);
 }
 
 function removeRecordEntry<T>(record: Record<string, T>, key: string): Record<string, T> {
@@ -561,107 +570,112 @@ function removeRecordEntry<T>(record: Record<string, T>, key: string): Record<st
 }
 
 interface TerminalUiStateStoreState {
-  terminalUiStateByThreadKey: Record<string, ThreadTerminalUiState>;
+  terminalUiStateByWorkspaceKey: Record<string, WorkspaceTerminalUiState>;
   /** Closed ids hidden from stale server metadata until that id is explicitly opened again. */
-  suppressedTerminalIdsByThreadKey: Record<string, string[]>;
-  setTerminalOpen: (threadRef: ScopedThreadRef, open: boolean) => void;
-  setTerminalHeight: (threadRef: ScopedThreadRef, height: number) => void;
-  splitTerminal: (threadRef: ScopedThreadRef, terminalId: string) => void;
-  splitTerminalVertical: (threadRef: ScopedThreadRef, terminalId: string) => void;
-  newTerminal: (threadRef: ScopedThreadRef, terminalId: string) => void;
+  suppressedTerminalIdsByWorkspaceKey: Record<string, string[]>;
+  setTerminalOpen: (workspaceRef: ScopedTerminalWorkspaceRef, open: boolean) => void;
+  setTerminalHeight: (workspaceRef: ScopedTerminalWorkspaceRef, height: number) => void;
+  splitTerminal: (workspaceRef: ScopedTerminalWorkspaceRef, terminalId: string) => void;
+  splitTerminalVertical: (workspaceRef: ScopedTerminalWorkspaceRef, terminalId: string) => void;
+  newTerminal: (workspaceRef: ScopedTerminalWorkspaceRef, terminalId: string) => void;
   ensureTerminal: (
-    threadRef: ScopedThreadRef,
+    workspaceRef: ScopedTerminalWorkspaceRef,
     terminalId: string,
     options?: { open?: boolean; active?: boolean },
   ) => void;
-  setActiveTerminal: (threadRef: ScopedThreadRef, terminalId: string) => void;
-  closeTerminal: (threadRef: ScopedThreadRef, terminalId: string) => void;
-  reconcileTerminalIds: (threadRef: ScopedThreadRef, nextIds: string[]) => void;
-  clearTerminalUiState: (threadRef: ScopedThreadRef) => void;
-  removeTerminalUiState: (threadRef: ScopedThreadRef) => void;
-  removeOrphanedTerminalUiStates: (activeThreadKeys: Set<string>) => void;
+  setActiveTerminal: (workspaceRef: ScopedTerminalWorkspaceRef, terminalId: string) => void;
+  closeTerminal: (workspaceRef: ScopedTerminalWorkspaceRef, terminalId: string) => void;
+  reconcileTerminalIds: (workspaceRef: ScopedTerminalWorkspaceRef, nextIds: string[]) => void;
+  clearTerminalUiState: (workspaceRef: ScopedTerminalWorkspaceRef) => void;
+  removeTerminalUiState: (workspaceRef: ScopedTerminalWorkspaceRef) => void;
+  removeOrphanedTerminalUiStates: (activeWorkspaceKeys: Set<string>) => void;
 }
 
 export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
   persist(
     (set, get) => {
       const updateTerminal = (
-        threadRef: ScopedThreadRef,
+        workspaceRef: ScopedTerminalWorkspaceRef,
         updater: (
-          state: ThreadTerminalUiState,
+          state: WorkspaceTerminalUiState,
           suppressedTerminalIds: readonly string[],
-        ) => ThreadTerminalUiState,
+        ) => WorkspaceTerminalUiState,
         suppression?: { terminalId: string; suppressed: boolean },
       ) => {
         set((state) => {
-          const threadKey = terminalThreadKey(threadRef);
-          const suppressedTerminalIds = state.suppressedTerminalIdsByThreadKey[threadKey] ?? [];
-          const nextTerminalUiStateByThreadKey = updateTerminalUiStateByThreadKey(
-            state.terminalUiStateByThreadKey,
-            threadRef,
+          const workspaceKey = terminalWorkspaceKey(workspaceRef);
+          const suppressedTerminalIds =
+            state.suppressedTerminalIdsByWorkspaceKey[workspaceKey] ?? [];
+          const nextTerminalUiStateByWorkspaceKey = updateTerminalUiStateByWorkspaceKey(
+            state.terminalUiStateByWorkspaceKey,
+            workspaceRef,
             (terminalState) => updater(terminalState, suppressedTerminalIds),
           );
-          const nextSuppressedTerminalIdsByThreadKey = suppression
+          const nextSuppressedTerminalIdsByWorkspaceKey = suppression
             ? updateSuppressedTerminalId(
-                state.suppressedTerminalIdsByThreadKey,
-                threadRef,
+                state.suppressedTerminalIdsByWorkspaceKey,
+                workspaceRef,
                 suppression.terminalId,
                 suppression.suppressed,
               )
-            : state.suppressedTerminalIdsByThreadKey;
+            : state.suppressedTerminalIdsByWorkspaceKey;
           if (
-            nextTerminalUiStateByThreadKey === state.terminalUiStateByThreadKey &&
-            nextSuppressedTerminalIdsByThreadKey === state.suppressedTerminalIdsByThreadKey
+            nextTerminalUiStateByWorkspaceKey === state.terminalUiStateByWorkspaceKey &&
+            nextSuppressedTerminalIdsByWorkspaceKey === state.suppressedTerminalIdsByWorkspaceKey
           ) {
             return state;
           }
           return {
-            terminalUiStateByThreadKey: nextTerminalUiStateByThreadKey,
-            suppressedTerminalIdsByThreadKey: nextSuppressedTerminalIdsByThreadKey,
+            terminalUiStateByWorkspaceKey: nextTerminalUiStateByWorkspaceKey,
+            suppressedTerminalIdsByWorkspaceKey: nextSuppressedTerminalIdsByWorkspaceKey,
           };
         });
       };
 
       return {
-        terminalUiStateByThreadKey: {},
-        suppressedTerminalIdsByThreadKey: {},
-        setTerminalOpen: (threadRef, open) => {
-          const terminalState = selectThreadTerminalUiState(
-            get().terminalUiStateByThreadKey,
-            threadRef,
+        terminalUiStateByWorkspaceKey: {},
+        suppressedTerminalIdsByWorkspaceKey: {},
+        setTerminalOpen: (workspaceRef, open) => {
+          const terminalState = selectWorkspaceTerminalUiState(
+            get().terminalUiStateByWorkspaceKey,
+            workspaceRef,
           );
           updateTerminal(
-            threadRef,
-            (state) => setThreadTerminalOpen(state, open),
+            workspaceRef,
+            (state) => setWorkspaceTerminalOpen(state, open),
             open && terminalState.terminalIds.length === 0
               ? { terminalId: DEFAULT_THREAD_TERMINAL_ID, suppressed: false }
               : undefined,
           );
         },
-        setTerminalHeight: (threadRef, height) =>
-          updateTerminal(threadRef, (state) => setThreadTerminalHeight(state, height)),
-        splitTerminal: (threadRef, terminalId) =>
-          updateTerminal(threadRef, (state) => splitThreadTerminal(state, terminalId), {
+        setTerminalHeight: (workspaceRef, height) =>
+          updateTerminal(workspaceRef, (state) => setWorkspaceTerminalHeight(state, height)),
+        splitTerminal: (workspaceRef, terminalId) =>
+          updateTerminal(workspaceRef, (state) => splitWorkspaceTerminal(state, terminalId), {
             terminalId,
             suppressed: false,
           }),
-        splitTerminalVertical: (threadRef, terminalId) =>
-          updateTerminal(threadRef, (state) => splitThreadTerminal(state, terminalId, "vertical"), {
-            terminalId,
-            suppressed: false,
-          }),
-        newTerminal: (threadRef, terminalId) =>
-          updateTerminal(threadRef, (state) => newThreadTerminal(state, terminalId), {
-            terminalId,
-            suppressed: false,
-          }),
-        ensureTerminal: (threadRef, terminalId, options) =>
+        splitTerminalVertical: (workspaceRef, terminalId) =>
           updateTerminal(
-            threadRef,
+            workspaceRef,
+            (state) => splitWorkspaceTerminal(state, terminalId, "vertical"),
+            {
+              terminalId,
+              suppressed: false,
+            },
+          ),
+        newTerminal: (workspaceRef, terminalId) =>
+          updateTerminal(workspaceRef, (state) => newWorkspaceTerminal(state, terminalId), {
+            terminalId,
+            suppressed: false,
+          }),
+        ensureTerminal: (workspaceRef, terminalId, options) =>
+          updateTerminal(
+            workspaceRef,
             (state) => {
               let nextState = state;
               if (!state.terminalIds.includes(terminalId)) {
-                nextState = newThreadTerminal(nextState, terminalId);
+                nextState = newWorkspaceTerminal(nextState, terminalId);
               }
               if (options?.active === false) {
                 nextState = {
@@ -671,99 +685,100 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
                 };
               }
               if (options?.active ?? true) {
-                nextState = setThreadActiveTerminal(nextState, terminalId);
+                nextState = setWorkspaceActiveTerminal(nextState, terminalId);
               }
               if (options?.open) {
-                nextState = setThreadTerminalOpen(nextState, true);
+                nextState = setWorkspaceTerminalOpen(nextState, true);
               }
-              return normalizeThreadTerminalUiState(nextState);
+              return normalizeWorkspaceTerminalUiState(nextState);
             },
             { terminalId, suppressed: false },
           ),
-        setActiveTerminal: (threadRef, terminalId) =>
-          updateTerminal(threadRef, (state) => setThreadActiveTerminal(state, terminalId)),
-        closeTerminal: (threadRef, terminalId) =>
-          updateTerminal(threadRef, (state) => closeThreadTerminal(state, terminalId), {
+        setActiveTerminal: (workspaceRef, terminalId) =>
+          updateTerminal(workspaceRef, (state) => setWorkspaceActiveTerminal(state, terminalId)),
+        closeTerminal: (workspaceRef, terminalId) =>
+          updateTerminal(workspaceRef, (state) => closeWorkspaceTerminal(state, terminalId), {
             terminalId,
             suppressed: true,
           }),
-        reconcileTerminalIds: (threadRef, nextIds) =>
-          updateTerminal(threadRef, (state, suppressedTerminalIds) => {
+        reconcileTerminalIds: (workspaceRef, nextIds) =>
+          updateTerminal(workspaceRef, (state, suppressedTerminalIds) => {
             if (suppressedTerminalIds.length === 0) {
-              return reconcileThreadTerminalSessionIds(state, nextIds);
+              return reconcileWorkspaceTerminalSessionIds(state, nextIds);
             }
             const suppressedIds = new Set(suppressedTerminalIds);
-            return reconcileThreadTerminalSessionIds(
+            return reconcileWorkspaceTerminalSessionIds(
               state,
               nextIds.filter((terminalId) => !suppressedIds.has(terminalId)),
             );
           }),
-        clearTerminalUiState: (threadRef) =>
+        clearTerminalUiState: (workspaceRef) =>
           set((state) => {
-            const threadKey = terminalThreadKey(threadRef);
-            const nextTerminalUiStateByThreadKey = updateTerminalUiStateByThreadKey(
-              state.terminalUiStateByThreadKey,
-              threadRef,
-              () => createDefaultThreadTerminalUiState(),
+            const workspaceKey = terminalWorkspaceKey(workspaceRef);
+            const nextTerminalUiStateByWorkspaceKey = updateTerminalUiStateByWorkspaceKey(
+              state.terminalUiStateByWorkspaceKey,
+              workspaceRef,
+              () => createDefaultWorkspaceTerminalUiState(),
             );
             const hadSuppressedTerminalIds =
-              state.suppressedTerminalIdsByThreadKey[threadKey] !== undefined;
+              state.suppressedTerminalIdsByWorkspaceKey[workspaceKey] !== undefined;
             if (
-              nextTerminalUiStateByThreadKey === state.terminalUiStateByThreadKey &&
+              nextTerminalUiStateByWorkspaceKey === state.terminalUiStateByWorkspaceKey &&
               !hadSuppressedTerminalIds
             ) {
               return state;
             }
             return {
-              terminalUiStateByThreadKey: nextTerminalUiStateByThreadKey,
-              suppressedTerminalIdsByThreadKey: removeRecordEntry(
-                state.suppressedTerminalIdsByThreadKey,
-                threadKey,
+              terminalUiStateByWorkspaceKey: nextTerminalUiStateByWorkspaceKey,
+              suppressedTerminalIdsByWorkspaceKey: removeRecordEntry(
+                state.suppressedTerminalIdsByWorkspaceKey,
+                workspaceKey,
               ),
             };
           }),
-        removeTerminalUiState: (threadRef) =>
+        removeTerminalUiState: (workspaceRef) =>
           set((state) => {
-            const threadKey = terminalThreadKey(threadRef);
-            const hadTerminalUiState = state.terminalUiStateByThreadKey[threadKey] !== undefined;
+            const workspaceKey = terminalWorkspaceKey(workspaceRef);
+            const hadTerminalUiState =
+              state.terminalUiStateByWorkspaceKey[workspaceKey] !== undefined;
             const hadSuppressedTerminalIds =
-              state.suppressedTerminalIdsByThreadKey[threadKey] !== undefined;
+              state.suppressedTerminalIdsByWorkspaceKey[workspaceKey] !== undefined;
             if (!hadTerminalUiState && !hadSuppressedTerminalIds) {
               return state;
             }
             return {
-              terminalUiStateByThreadKey: removeRecordEntry(
-                state.terminalUiStateByThreadKey,
-                threadKey,
+              terminalUiStateByWorkspaceKey: removeRecordEntry(
+                state.terminalUiStateByWorkspaceKey,
+                workspaceKey,
               ),
-              suppressedTerminalIdsByThreadKey: removeRecordEntry(
-                state.suppressedTerminalIdsByThreadKey,
-                threadKey,
+              suppressedTerminalIdsByWorkspaceKey: removeRecordEntry(
+                state.suppressedTerminalIdsByWorkspaceKey,
+                workspaceKey,
               ),
             };
           }),
-        removeOrphanedTerminalUiStates: (activeThreadKeys) =>
+        removeOrphanedTerminalUiStates: (activeWorkspaceKeys) =>
           set((state) => {
             const orphanedIds = new Set(
               [
-                ...Object.keys(state.terminalUiStateByThreadKey),
-                ...Object.keys(state.suppressedTerminalIdsByThreadKey),
-              ].filter((key) => !activeThreadKeys.has(key)),
+                ...Object.keys(state.terminalUiStateByWorkspaceKey),
+                ...Object.keys(state.suppressedTerminalIdsByWorkspaceKey),
+              ].filter((key) => !activeWorkspaceKeys.has(key)),
             );
             if (orphanedIds.size === 0) {
               return state;
             }
-            const nextTerminalUiStateByThreadKey = { ...state.terminalUiStateByThreadKey };
-            const nextSuppressedTerminalIdsByThreadKey = {
-              ...state.suppressedTerminalIdsByThreadKey,
+            const nextTerminalUiStateByWorkspaceKey = { ...state.terminalUiStateByWorkspaceKey };
+            const nextSuppressedTerminalIdsByWorkspaceKey = {
+              ...state.suppressedTerminalIdsByWorkspaceKey,
             };
             for (const id of orphanedIds) {
-              delete nextTerminalUiStateByThreadKey[id];
-              delete nextSuppressedTerminalIdsByThreadKey[id];
+              delete nextTerminalUiStateByWorkspaceKey[id];
+              delete nextSuppressedTerminalIdsByWorkspaceKey[id];
             }
             return {
-              terminalUiStateByThreadKey: nextTerminalUiStateByThreadKey,
-              suppressedTerminalIdsByThreadKey: nextSuppressedTerminalIdsByThreadKey,
+              terminalUiStateByWorkspaceKey: nextTerminalUiStateByWorkspaceKey,
+              suppressedTerminalIdsByWorkspaceKey: nextSuppressedTerminalIdsByWorkspaceKey,
             };
           }),
       };
@@ -774,7 +789,7 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
       storage: createJSONStorage(createTerminalUiStateStorage),
       migrate: migratePersistedTerminalUiStateStoreState,
       partialize: (state) => ({
-        terminalUiStateByThreadKey: state.terminalUiStateByThreadKey,
+        terminalUiStateByWorkspaceKey: state.terminalUiStateByWorkspaceKey,
       }),
     },
   ),

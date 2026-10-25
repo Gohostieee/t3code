@@ -1,10 +1,11 @@
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { AppText as Text } from "../../components/AppText";
 import { DEFAULT_TERMINAL_ID, EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { type KnownTerminalSession } from "@t3tools/client-runtime/state/terminal";
 import type { MenuAction } from "@react-native-menu/menu";
 import { SymbolView } from "../../components/AppSymbol";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { Platform, Pressable, View, useColorScheme } from "react-native";
 import {
   KeyboardController,
@@ -25,6 +26,7 @@ import { GlassSurface } from "../../components/GlassSurface";
 import { LoadingScreen } from "../../components/LoadingScreen";
 import { environmentCatalog } from "../../connection/catalog";
 import { useEnvironmentPresentation } from "../../state/presentation";
+import { useThreadTerminalWorkspace } from "../../state/terminalWorkspace";
 import { terminalEnvironment } from "../../state/terminal";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useWorkspaceState } from "../../state/workspace";
@@ -51,21 +53,21 @@ import {
   getTerminalSurfaceReplayBuffer,
   TERMINAL_BUFFER_REPLAY_STABILITY_DELAY_MS,
 } from "./terminalBufferReplay";
-import {
-  resolveTerminalOpenLocation,
-  takePendingTerminalLaunch,
-  type PendingTerminalLaunch,
-} from "./terminalLaunchContext";
+import { resolveTerminalOpenLocation } from "./terminalLaunchContext";
 import {
   basename,
   buildTerminalMenuSessions,
   getTerminalStatusLabel,
   nextOpenTerminalId,
-  previousLiveTerminalId,
   resolveTerminalSessionLabel,
   type TerminalMenuSession,
 } from "./terminalMenu";
-import { cacheTerminalGridSize, getCachedTerminalGridSize } from "./terminalUiState";
+import {
+  cacheSelectedTerminal,
+  getSelectedTerminal,
+  cacheTerminalGridSize,
+  getCachedTerminalGridSize,
+} from "./terminalUiState";
 
 const DEFAULT_TERMINAL_COLS = 80;
 const DEFAULT_TERMINAL_ROWS = 24;
@@ -136,22 +138,6 @@ function applyCtrlModifier(input: string): string {
   return input;
 }
 
-function pickRunningTerminalSessionForBootstrap(
-  sessions: ReadonlyArray<KnownTerminalSession>,
-): KnownTerminalSession | null {
-  const running = sessions.filter(
-    (session) => session.state.status === "running" || session.state.status === "starting",
-  );
-  if (running.length === 0) {
-    return null;
-  }
-  return (
-    running.find((session) => session.target.terminalId === DEFAULT_TERMINAL_ID) ??
-    running[0] ??
-    null
-  );
-}
-
 type ThreadTerminalRouteScreenProps = StaticScreenProps<{
   readonly environmentId: string;
   readonly threadId: string;
@@ -160,18 +146,30 @@ type ThreadTerminalRouteScreenProps = StaticScreenProps<{
 
 export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps) {
   const navigation = useNavigation();
+  const openTerminal = useAtomCommand(terminalEnvironment.open, "open shared terminal");
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
   const resizeTerminal = useAtomCommand(terminalEnvironment.resize, "terminal resize");
   const clearTerminal = useAtomCommand(terminalEnvironment.clear, "terminal clear");
   const closeTerminal = useAtomCommand(terminalEnvironment.close, "terminal close");
-  const openTerminal = useAtomCommand(terminalEnvironment.open, "terminal open");
+  const restartTerminal = useAtomCommand(terminalEnvironment.restart, "restart terminal");
   const retryEnvironment = useAtomCommand(environmentCatalog.retryNow, "environment retry");
   const appearanceScheme = useColorScheme() === "light" ? "light" : "dark";
   const { state: workspaceState } = useWorkspaceState();
   const { layout, panes, togglePrimarySidebar } = useAdaptiveWorkspaceLayout();
   const params = props.route.params;
-  const { selectedThread, selectedThreadProject, selectedEnvironmentConnection } =
-    useThreadSelection();
+  const selection = useThreadSelection();
+  const { selectedThreadProject, selectedEnvironmentConnection } = selection;
+  const selectedThread =
+    selection.selectedThread?.id === params.threadId &&
+    selection.selectedThread.environmentId === params.environmentId
+      ? selection.selectedThread
+      : null;
+  const terminalWorkspace = useThreadTerminalWorkspace(
+    selectedThread
+      ? { environmentId: selectedThread.environmentId, threadId: selectedThread.id }
+      : null,
+  );
+  const workspaceId = terminalWorkspace.data?.id;
   const selectedThreadDetail = useSelectedThreadDetail();
   const routeEnvironmentIdRaw = firstRouteParam(params.environmentId);
   const routeThreadIdRaw = firstRouteParam(params.threadId);
@@ -183,6 +181,80 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
   const isEnvironmentReady = environment.presentation?.connection.phase === "connected";
   const requestedTerminalId = firstRouteParam(params.terminalId);
   const terminalId = requestedTerminalId ?? DEFAULT_TERMINAL_ID;
+  const retainedSession = useEffectEvent((environmentId: EnvironmentId, workspaceId: string) => {
+    const retained = getSelectedTerminal({ environmentId, workspaceId });
+    return knownSessions.find(
+      (entry) =>
+        entry.target.terminalId === retained &&
+        (entry.state.status === "running" || entry.state.status === "starting"),
+    );
+  });
+  const [openFailure, setOpenFailure] = useState<{ workspaceId: string; message: string } | null>(
+    null,
+  );
+  const [openAttempt, setOpenAttempt] = useState(0);
+  const workspaceCwd = terminalWorkspace.data?.cwd;
+  const workspaceWorktreePath = terminalWorkspace.data?.worktreePath;
+  const selectedEnvironmentId = selectedThread?.environmentId;
+  const selectedThreadId = selectedThread?.id;
+  useEffect(() => {
+    if (
+      requestedTerminalId ||
+      !workspaceId ||
+      !workspaceCwd ||
+      !selectedEnvironmentId ||
+      !selectedThreadId
+    )
+      return;
+    const retained = retainedSession(selectedEnvironmentId, workspaceId);
+    if (retained) {
+      navigation.dispatch(
+        StackActions.replace("ThreadTerminal", {
+          environmentId: String(selectedEnvironmentId),
+          threadId: String(selectedThreadId),
+          terminalId: retained.target.terminalId,
+        }),
+      );
+      return;
+    }
+    setOpenFailure(null);
+    let current = true;
+    void openTerminal({
+      environmentId: selectedEnvironmentId,
+      input: {
+        workspaceId,
+        terminalId: DEFAULT_TERMINAL_ID,
+        selectPrimary: true,
+        cwd: workspaceCwd,
+        worktreePath: workspaceWorktreePath,
+      },
+    }).then((result) => {
+      if (current && result._tag === "Failure")
+        setOpenFailure({ workspaceId, message: String(squashAtomCommandFailure(result)) });
+      if (current && result._tag === "Success")
+        navigation.dispatch(
+          StackActions.replace("ThreadTerminal", {
+            environmentId: String(selectedEnvironmentId),
+            threadId: String(selectedThreadId),
+            terminalId: result.value.terminalId,
+          }),
+        );
+    });
+    return () => {
+      current = false;
+    };
+  }, [
+    requestedTerminalId,
+    workspaceId,
+    workspaceCwd,
+    workspaceWorktreePath,
+    selectedEnvironmentId,
+    selectedThreadId,
+    openTerminal,
+    navigation,
+    openAttempt,
+  ]);
+
   const {
     isReady: hasResolvedFontPreference,
     appearance,
@@ -190,10 +262,10 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
   } = useAppearancePreferences();
   const fontSize = appearance.terminalFontSize;
   const cachedRouteGridSize =
-    routeEnvironmentId && routeThreadId
+    routeEnvironmentId && routeThreadId && workspaceId
       ? getCachedTerminalGridSize({
           environmentId: routeEnvironmentId,
-          threadId: routeThreadId,
+          workspaceId: workspaceId!,
           terminalId,
         })
       : null;
@@ -201,38 +273,32 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     environmentId: selectedThread?.environmentId ?? null,
     threadId: selectedThread?.id ?? null,
   });
-  const runningSession = useMemo(
-    () => pickRunningTerminalSessionForBootstrap(knownSessions),
-    [knownSessions],
-  );
+  useEffect(() => {
+    if (selectedEnvironmentId && workspaceId && requestedTerminalId)
+      cacheSelectedTerminal({
+        environmentId: selectedEnvironmentId,
+        workspaceId,
+        terminalId: requestedTerminalId,
+      });
+  }, [selectedEnvironmentId, workspaceId, requestedTerminalId]);
   const activeKnownSession = useMemo(
     () => knownSessions.find((session) => session.target.terminalId === terminalId) ?? null,
     [knownSessions, terminalId],
   );
   const launchTarget = useMemo(
     () =>
-      selectedThread
+      selectedThread && workspaceId
         ? {
             environmentId: selectedThread.environmentId,
-            threadId: selectedThread.id,
+            workspaceId: workspaceId!,
             terminalId,
           }
         : null,
-    [selectedThread, terminalId],
+    [selectedThread, workspaceId, terminalId],
   );
   const launchTargetKey = launchTarget
-    ? `${launchTarget.environmentId}:${launchTarget.threadId}:${launchTarget.terminalId}`
+    ? `${launchTarget.environmentId}:${launchTarget.workspaceId}:${launchTarget.terminalId}`
     : null;
-  const [pendingLaunchEntry, setPendingLaunchEntry] = useState<{
-    readonly key: string | null;
-    readonly launch: PendingTerminalLaunch | null;
-  }>(() => ({
-    key: launchTargetKey,
-    launch: launchTarget === null ? null : takePendingTerminalLaunch(launchTarget),
-  }));
-  const pendingLaunch =
-    pendingLaunchEntry.key === launchTargetKey ? pendingLaunchEntry.launch : null;
-  const hasResolvedPendingLaunch = pendingLaunchEntry.key === launchTargetKey;
   const [initialAttachGridEntry, setInitialAttachGridEntry] = useState(() => ({
     key: launchTargetKey,
     size: cachedRouteGridSize ?? {
@@ -253,7 +319,6 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
   const bufferReplayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const firstNonEmptyBufferLoggedRef = useRef(false);
   const lastBufferReplayKeyRef = useRef<string | null>(null);
-  const sentInitialInputKeyRef = useRef<string | null>(null);
   const [readyBufferReplayKey, setReadyBufferReplayKey] = useState<string | null>(null);
   /** Default grid is always valid for attach; onResize refines cols/rows. Requiring a cached size blocked bootstrap for new terminal routes. */
   const [hasMeasuredSurface, setHasMeasuredSurface] = useState(true);
@@ -264,19 +329,9 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     terminalId,
     value: null,
   });
-  const shouldRedirectToRunningTerminal =
-    requestedTerminalId === null &&
-    runningSession !== null &&
-    runningSession.target.terminalId !== terminalId;
   const launchLocationCandidate = useMemo(() => {
     if (!selectedThread || !selectedThreadProject?.workspaceRoot) {
       return null;
-    }
-    if (pendingLaunch) {
-      return {
-        cwd: pendingLaunch.cwd,
-        worktreePath: pendingLaunch.worktreePath,
-      };
     }
     return resolveTerminalOpenLocation({
       terminalLocation: activeKnownSession?.state.summary ?? null,
@@ -287,8 +342,8 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     });
   }, [
     activeKnownSession?.state.summary,
-    pendingLaunch,
     selectedThread,
+    workspaceId,
     selectedThreadDetail?.worktreePath,
     selectedThreadProject?.workspaceRoot,
   ]);
@@ -301,34 +356,32 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
   const terminalAttachInput = useMemo(
     () =>
       selectedThread !== null &&
+      workspaceId !== undefined &&
       launchLocation !== null &&
-      hasResolvedPendingLaunch &&
       initialAttachGridSize !== null &&
       hasResolvedFontPreference &&
       hasMeasuredSurface &&
       isEnvironmentReady &&
-      !shouldRedirectToRunningTerminal
+      requestedTerminalId !== null
         ? {
-            threadId: selectedThread.id,
+            workspaceId: workspaceId!,
             terminalId,
             cwd: launchLocation.cwd,
             worktreePath: launchLocation.worktreePath,
             cols: initialAttachGridSize.cols,
             rows: initialAttachGridSize.rows,
-            ...(pendingLaunch?.env ? { env: pendingLaunch.env } : {}),
-            ...(pendingLaunch ? { restartIfNotRunning: true } : {}),
           }
         : null,
     [
       hasMeasuredSurface,
       hasResolvedFontPreference,
-      hasResolvedPendingLaunch,
       initialAttachGridSize,
       isEnvironmentReady,
       launchLocation,
-      pendingLaunch,
       selectedThread,
-      shouldRedirectToRunningTerminal,
+      workspaceId,
+      navigation,
+      requestedTerminalId,
       terminalId,
     ],
   );
@@ -337,7 +390,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     terminal: terminalAttachInput,
   });
   const terminalKey = selectedThread
-    ? `${selectedThread.environmentId}:${selectedThread.id}:${terminalId}`
+    ? `${selectedThread.environmentId}:${workspaceId}:${terminalId}`
     : terminalId;
   const bufferReplayKey = useMemo(
     () => getTerminalBufferReplayKey({ terminalKey, fontSize }),
@@ -352,64 +405,6 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     readyReplayKey: readyBufferReplayKey,
   });
   const isRunning = terminal.status === "running" || terminal.status === "starting";
-
-  // When the process ends while this screen is attached (e.g. typing `exit`),
-  // close the session and leave the screen, mirroring the web drawer's
-  // onSessionExited flow. Only react to a running -> exited transition
-  // observed on this screen so already-exited sessions can still be opened
-  // (they restart on attach).
-  const runningTerminalKeyRef = useRef<string | null>(null);
-  const reopenedStaleTerminalKeyRef = useRef<string | null>(null);
-  const pendingExitNavigationRef = useRef<string | null>(null);
-
-  // Attach subscriptions are cached with an idle TTL, so revisiting a
-  // terminal whose session ended while unobserved reuses the stale stream
-  // without a new attach RPC — the server never respawns anything. Detect
-  // that (dead status with processed events, never seen running here) and
-  // issue an explicit open; its snapshot flows into the live subscription.
-  useEffect(() => {
-    if (isRunning) {
-      reopenedStaleTerminalKeyRef.current = null;
-      return;
-    }
-    if (
-      terminalAttachInput === null ||
-      !selectedThread ||
-      (terminal.status !== "closed" && terminal.status !== "exited") ||
-      terminal.version === 0 ||
-      runningTerminalKeyRef.current === terminalKey ||
-      reopenedStaleTerminalKeyRef.current === terminalKey
-    ) {
-      return;
-    }
-    reopenedStaleTerminalKeyRef.current = terminalKey;
-    void openTerminal({
-      environmentId: selectedThread.environmentId,
-      input: {
-        threadId: selectedThread.id,
-        terminalId,
-        cwd: terminalAttachInput.cwd,
-        worktreePath: terminalAttachInput.worktreePath,
-        cols: terminalAttachInput.cols,
-        rows: terminalAttachInput.rows,
-        ...(terminalAttachInput.env ? { env: terminalAttachInput.env } : {}),
-      },
-    }).then((result) => {
-      // Release the guard on failure so a later render can retry the respawn.
-      if (result._tag === "Failure" && reopenedStaleTerminalKeyRef.current === terminalKey) {
-        reopenedStaleTerminalKeyRef.current = null;
-      }
-    });
-  }, [
-    isRunning,
-    openTerminal,
-    selectedThread,
-    terminal.status,
-    terminal.version,
-    terminalAttachInput,
-    terminalId,
-    terminalKey,
-  ]);
 
   useEffect(() => {
     terminalDebugLog("surface:props", {
@@ -470,7 +465,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
   const usesNativeHeaderGlass = Platform.OS === "ios";
   const pendingModifier =
     pendingModifierState.terminalId === terminalId ? pendingModifierState.value : null;
-  const headerSubtitle = selectedThreadProject?.title ?? "";
+  const headerSubtitle = `${selectedThreadProject?.title ?? ""} ? ${terminalWorkspace.data?.cwd ?? "Resolving checkout..."}`;
   const terminalToolbarActions = useMemo<ReadonlyArray<TerminalToolbarAction>>(() => {
     const modifierActions: ReadonlyArray<TerminalToolbarAction> =
       hostPlatform === "mac"
@@ -548,16 +543,6 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
   );
 
   useEffect(() => {
-    if (pendingLaunchEntry.key === launchTargetKey) {
-      return;
-    }
-    setPendingLaunchEntry({
-      key: launchTargetKey,
-      launch: launchTarget === null ? null : takePendingTerminalLaunch(launchTarget),
-    });
-  }, [launchTarget, launchTargetKey, pendingLaunchEntry.key]);
-
-  useEffect(() => {
     if (initialAttachGridEntry.key === launchTargetKey) {
       return;
     }
@@ -592,49 +577,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
   ]);
 
   useEffect(() => {
-    if (!shouldRedirectToRunningTerminal || !selectedThread || !runningSession) {
-      return;
-    }
-    navigation.dispatch(
-      StackActions.replace("ThreadTerminal", {
-        environmentId: String(selectedThread.environmentId),
-        threadId: String(selectedThread.id),
-        terminalId: runningSession.target.terminalId,
-      }),
-    );
-  }, [navigation, runningSession, selectedThread, shouldRedirectToRunningTerminal]);
-
-  useEffect(() => {
-    const initialInput = pendingLaunch?.initialInput;
-    if (
-      !initialInput ||
-      !selectedThread ||
-      terminal.version === 0 ||
-      sentInitialInputKeyRef.current === launchTargetKey
-    ) {
-      return;
-    }
-    sentInitialInputKeyRef.current = launchTargetKey;
-    void writeTerminal({
-      environmentId: selectedThread.environmentId,
-      input: {
-        threadId: selectedThread.id,
-        terminalId,
-        data: initialInput,
-      },
-    });
-  }, [
-    launchTargetKey,
-    pendingLaunch?.initialInput,
-    selectedThread,
-    terminal.version,
-    terminalId,
-    writeTerminal,
-  ]);
-
-  useEffect(() => {
     firstNonEmptyBufferLoggedRef.current = false;
-    sentInitialInputKeyRef.current = null;
   }, [terminalKey]);
 
   const clearBufferReplayTimer = useCallback(() => {
@@ -682,7 +625,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     setLastGridSize(
       getCachedTerminalGridSize({
         environmentId: routeEnvironmentId,
-        threadId: routeThreadId,
+        workspaceId: workspaceId!,
         terminalId,
       }) ?? {
         cols: DEFAULT_TERMINAL_COLS,
@@ -690,24 +633,32 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
       },
     );
     setHasMeasuredSurface(true);
-  }, [routeEnvironmentId, routeThreadId, terminalId]);
+  }, [routeEnvironmentId, routeThreadId, workspaceId, terminalId]);
 
   const writeInput = useCallback(
     (data: string) => {
-      if (!selectedThread || !isRunning) {
+      if (!selectedThread || !workspaceId || !isRunning) {
         return;
       }
 
       void writeTerminal({
         environmentId: selectedThread.environmentId,
         input: {
-          threadId: selectedThread.id,
+          workspaceId: workspaceId!,
+          generation: terminal.summary?.generation,
           terminalId,
           data,
         },
       });
     },
-    [isRunning, selectedThread, terminalId, writeTerminal],
+    [
+      isRunning,
+      selectedThread,
+      workspaceId,
+      terminalId,
+      writeTerminal,
+      terminal.summary?.generation,
+    ],
   );
 
   const handleInput = useCallback(
@@ -740,11 +691,11 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
       if (readyBufferReplayKey !== bufferReplayKey) {
         scheduleBufferReplayReady();
       }
-      if (routeEnvironmentId && routeThreadId) {
+      if (routeEnvironmentId && routeThreadId && workspaceId) {
         cacheTerminalGridSize(
           {
             environmentId: routeEnvironmentId,
-            threadId: routeThreadId,
+            workspaceId: workspaceId!,
             terminalId,
           },
           size,
@@ -755,14 +706,15 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
       }
 
       setLastGridSize(size);
-      if (!selectedThread || !isRunning) {
+      if (!selectedThread || !workspaceId || !isRunning || !navigation.isFocused()) {
         return;
       }
 
       void resizeTerminal({
         environmentId: selectedThread.environmentId,
         input: {
-          threadId: selectedThread.id,
+          workspaceId: workspaceId!,
+          generation: terminal.summary?.generation,
           terminalId,
           cols: size.cols,
           rows: size.rows,
@@ -780,6 +732,9 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
       resizeTerminal,
       scheduleBufferReplayReady,
       selectedThread,
+      workspaceId,
+      terminal.summary?.generation,
+      navigation,
       terminalId,
       terminalKey,
     ],
@@ -802,105 +757,6 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     [navigation, selectedThread, terminalId],
   );
 
-  const navigateAwayAfterExit = useCallback(() => {
-    // With other shells still live, fall through to the previous one instead
-    // of dropping the user back on the thread.
-    const fallbackTerminalId = previousLiveTerminalId({
-      sessions: terminalMenuSessions,
-      exitedTerminalId: terminalId,
-    });
-    if (fallbackTerminalId !== null && selectedThread) {
-      navigation.dispatch(
-        StackActions.replace("ThreadTerminal", {
-          environmentId: String(selectedThread.environmentId),
-          threadId: String(selectedThread.id),
-          terminalId: fallbackTerminalId,
-        }),
-      );
-      return;
-    }
-    if (navigation.canGoBack()) {
-      navigation.goBack();
-      return;
-    }
-    // Deep-linked/root mounts have nothing to pop; land on the thread
-    // instead of stranding the user on a dead terminal.
-    if (selectedThread) {
-      navigation.dispatch(
-        StackActions.replace("Thread", {
-          environmentId: String(selectedThread.environmentId),
-          threadId: String(selectedThread.id),
-        }),
-      );
-    }
-  }, [navigation, selectedThread, terminalId, terminalMenuSessions]);
-
-  useEffect(() => {
-    // Detached (hidden surface or environment drop): forget the running
-    // marker so a reattach takes the stale-reopen path instead of misreading
-    // the dead snapshot as an exit observed on this screen. A pending exit
-    // navigation stays armed — it only clears once the session runs again —
-    // so refocusing a dead screen still leaves it.
-    if (terminalAttachInput === null) {
-      runningTerminalKeyRef.current = null;
-      return;
-    }
-    if (isRunning) {
-      runningTerminalKeyRef.current = terminalKey;
-      // The session came back (e.g. respawned elsewhere) before the user
-      // returned; a stale pending exit must not eject a live terminal.
-      pendingExitNavigationRef.current = null;
-      return;
-    }
-    // The web drawer treats both exited and closed as session end.
-    const sessionEnded = terminal.status === "exited" || terminal.status === "closed";
-    if (!sessionEnded || runningTerminalKeyRef.current !== terminalKey) {
-      return;
-    }
-    runningTerminalKeyRef.current = null;
-    // Mark this key handled so the stale-attach effect doesn't respawn the
-    // session the user just ended.
-    reopenedStaleTerminalKeyRef.current = terminalKey;
-    if (selectedThread) {
-      void closeTerminal({
-        environmentId: selectedThread.environmentId,
-        input: {
-          threadId: selectedThread.id,
-          terminalId,
-        },
-      });
-    }
-    if (navigation.isFocused()) {
-      navigateAwayAfterExit();
-      return;
-    }
-    // An unfocused screen can't navigate; leave when the user returns so
-    // they never land on the dead session.
-    pendingExitNavigationRef.current = terminalKey;
-  }, [
-    closeTerminal,
-    isRunning,
-    navigateAwayAfterExit,
-    navigation,
-    selectedThread,
-    terminal.status,
-    terminalAttachInput,
-    terminalId,
-    terminalKey,
-  ]);
-
-  useEffect(
-    () =>
-      navigation.addListener("focus", () => {
-        if (pendingExitNavigationRef.current !== terminalKey) {
-          return;
-        }
-        pendingExitNavigationRef.current = null;
-        navigateAwayAfterExit();
-      }),
-    [navigateAwayAfterExit, navigation, terminalKey],
-  );
-
   const handleOpenNewTerminal = useCallback(() => {
     if (!selectedThread) {
       return;
@@ -910,10 +766,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
       StackActions.replace("ThreadTerminal", {
         environmentId: String(selectedThread.environmentId),
         threadId: String(selectedThread.id),
-        terminalId: nextOpenTerminalId({
-          listedTerminalIds: terminalMenuSessions.map((session) => session.terminalId),
-          activeRouteTerminalId: terminalId,
-        }),
+        terminalId: nextOpenTerminalId(),
       }),
     );
   }, [navigation, selectedThread, terminalId, terminalMenuSessions]);
@@ -990,7 +843,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
   );
 
   const handleClearTerminal = useCallback(() => {
-    if (!selectedThread) {
+    if (!selectedThread || !workspaceId) {
       return;
     }
 
@@ -998,11 +851,12 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     void clearTerminal({
       environmentId: selectedThread.environmentId,
       input: {
-        threadId: selectedThread.id,
+        workspaceId: workspaceId!,
+        generation: terminal.summary?.generation,
         terminalId,
       },
     });
-  }, [clearTerminal, selectedThread, terminalId]);
+  }, [clearTerminal, selectedThread, workspaceId, terminalId, terminal.summary?.generation]);
 
   const handleToolbarActionPress = useCallback(
     (action: TerminalToolbarAction) => {
@@ -1047,6 +901,17 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
       void retryEnvironment(routeEnvironmentId);
     }
   }, [retryEnvironment, routeEnvironmentId]);
+
+  if (openFailure && openFailure.workspaceId === workspaceId && !requestedTerminalId) {
+    return (
+      <View className="flex-1 items-center justify-center gap-4 p-4">
+        <Text>{openFailure.message}</Text>
+        <Pressable onPress={() => setOpenAttempt((value) => value + 1)}>
+          <Text>Retry opening terminal</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   if (!selectedThread) {
     if (workspaceState.isLoadingConnections) {
@@ -1217,6 +1082,41 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
           />
         ) : (
           <>
+            <View className="flex-row items-center gap-3 px-3 py-2">
+              <Text className="flex-1 text-xs text-foreground-muted">
+                {terminalWorkspace.error ??
+                  `Launch: ${terminalWorkspace.data?.cwd ?? "Resolving checkout..."}`}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  if (workspaceId && terminalAttachInput)
+                    void (isRunning
+                      ? closeTerminal({
+                          environmentId: selectedThread.environmentId,
+                          input: {
+                            workspaceId,
+                            terminalId,
+                            generation: terminal.summary?.generation,
+                          },
+                        })
+                      : restartTerminal({
+                          environmentId: selectedThread.environmentId,
+                          input: {
+                            workspaceId,
+                            terminalId,
+                            generation: terminal.summary?.generation,
+                            cwd: terminalAttachInput.cwd,
+                            worktreePath: terminalAttachInput.worktreePath,
+                            cols: lastGridSize.cols,
+                            rows: lastGridSize.rows,
+                          },
+                        }));
+                }}
+              >
+                <Text className="text-xs text-primary">{isRunning ? "Terminate" : "Restart"}</Text>
+              </Pressable>
+            </View>
             <View className="flex-1" style={{ paddingBottom: terminalBottomInset }}>
               <TerminalSurface
                 autoFocus={!SHOWCASE_ENABLED}

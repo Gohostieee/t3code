@@ -43,6 +43,8 @@ it.effect("spawns through the public adapter with the provided host references",
       env: {},
     });
 
+    process.kill("SIGTERM");
+    assert.deepEqual(spawn.mock.results[0]?.value.kill.mock.calls, [[undefined]]);
     assert.equal(process.pid, 42);
     assert.equal(spawn.mock.calls.length, 1);
     assert.deepEqual(spawn.mock.calls[0], [

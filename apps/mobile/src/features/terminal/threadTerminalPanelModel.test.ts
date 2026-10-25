@@ -9,7 +9,7 @@ import {
 
 const identity: ThreadTerminalSubscriptionIdentity = {
   environmentId: EnvironmentId.make("env-1"),
-  threadId: ThreadId.make("thread-1"),
+  workspaceId: ThreadId.make("thread-1"),
   terminalId: "default",
   cwd: "/repo",
   worktreePath: "/repo",
@@ -28,7 +28,7 @@ describe("threadTerminalSubscriptionKey", () => {
 
   it.each([
     ["environment", { environmentId: EnvironmentId.make("env-2") }],
-    ["thread", { threadId: ThreadId.make("thread-2") }],
+    ["thread", { workspaceId: ThreadId.make("thread-2") }],
     ["terminal", { terminalId: "term-2" }],
     ["cwd", { cwd: "/repo/packages/app" }],
     ["worktree", { worktreePath: "/repo/worktrees/feature" }],

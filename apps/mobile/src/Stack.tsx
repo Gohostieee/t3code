@@ -1,3 +1,4 @@
+import { ProjectTerminalRouteScreen } from "./features/terminal/ProjectTerminalRouteScreen";
 import {
   createPathConfigForStaticNavigation,
   getPathFromState,
@@ -400,6 +401,11 @@ export const RootStack = createNativeStackNavigator({
       screen: ThreadRouteScreen,
       linking: THREAD_LINKING_PREFIX,
       options: GLASS_HEADER_OPTIONS,
+    }),
+    ProjectTerminal: createNativeStackScreen({
+      screen: ProjectTerminalRouteScreen,
+      linking: "environment/:environmentId/project/:projectId/terminal",
+      options: SOLID_HEADER_OPTIONS,
     }),
     ThreadTerminal: createNativeStackScreen({
       screen: ThreadTerminalRouteScreen,

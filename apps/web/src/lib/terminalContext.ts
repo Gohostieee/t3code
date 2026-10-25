@@ -3,6 +3,9 @@ import { type ThreadId } from "@t3tools/contracts";
 import { extractTrailingElementContexts, type ParsedElementContextEntry } from "./elementContext";
 
 export interface TerminalContextSelection {
+  environmentId?: string;
+  workspaceId?: string;
+  cwd?: string;
   terminalId: string;
   terminalLabel: string;
   lineStart: number;
@@ -91,6 +94,9 @@ export function normalizeTerminalContextSelection(
   const lineStart = Math.max(1, Math.floor(selection.lineStart));
   const lineEnd = Math.max(lineStart, Math.floor(selection.lineEnd));
   return {
+    ...(selection.environmentId ? { environmentId: selection.environmentId } : {}),
+    ...(selection.workspaceId ? { workspaceId: selection.workspaceId } : {}),
+    ...(selection.cwd ? { cwd: selection.cwd } : {}),
     terminalId,
     terminalLabel,
     lineStart,
@@ -173,6 +179,10 @@ export function buildTerminalContextBlock(
   for (let index = 0; index < normalizedContexts.length; index += 1) {
     const context = normalizedContexts[index]!;
     lines.push(`- ${formatTerminalContextLabel(context)}:`);
+    if (context.cwd)
+      lines.push(
+        `  Source: ${context.cwd} (checkout ${context.workspaceId ?? "unknown"}, environment ${context.environmentId ?? "unknown"}, session ${context.terminalId})`,
+      );
     lines.push(...buildTerminalContextBodyLines(context));
     if (index < normalizedContexts.length - 1) {
       lines.push("");

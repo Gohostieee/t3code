@@ -1,4 +1,4 @@
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@t3tools/contracts";
 
 interface TerminalLocationLike {
   readonly cwd: string;
@@ -7,7 +7,7 @@ interface TerminalLocationLike {
 
 interface PendingTerminalLaunchTarget {
   readonly environmentId: EnvironmentId;
-  readonly threadId: ThreadId;
+  readonly workspaceId: string;
   readonly terminalId: string;
 }
 
@@ -21,7 +21,7 @@ export interface PendingTerminalLaunch {
 const pendingTerminalLaunches = new Map<string, PendingTerminalLaunch>();
 
 function pendingTerminalLaunchKey(input: PendingTerminalLaunchTarget): string {
-  return `${input.environmentId}:${input.threadId}:${input.terminalId}`;
+  return `${input.environmentId}:${input.workspaceId}:${input.terminalId}`;
 }
 
 export function stagePendingTerminalLaunch(input: {

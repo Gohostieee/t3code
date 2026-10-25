@@ -11,7 +11,7 @@
  * Polling is reference-counted via scoped `retain`. A single layer-scoped fiber
  * polls forever, but each tick is a no-op when the retain count is zero.
  */
-import { ThreadId, type DiscoveredLocalServer } from "@t3tools/contracts";
+import { type DiscoveredLocalServer } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Net from "@t3tools/shared/Net";
 import { LSOF_LOCAL_HOST_TOKENS } from "@t3tools/shared/preview";
@@ -35,12 +35,12 @@ export class PortDiscovery extends Context.Service<
     ) => Effect.Effect<void, never, Scope.Scope>;
     readonly retain: Effect.Effect<void, never, Scope.Scope>;
     readonly registerTerminalProcesses: (input: {
-      readonly threadId: string;
+      readonly workspaceId: string;
       readonly terminalId: string;
       readonly processIds: ReadonlyArray<number>;
     }) => Effect.Effect<void>;
     readonly unregisterTerminal: (input: {
-      readonly threadId: string;
+      readonly workspaceId: string;
       readonly terminalId: string;
     }) => Effect.Effect<void>;
   }
@@ -70,14 +70,14 @@ interface ScannerState {
 }
 
 interface TerminalProcessOwner {
-  readonly threadId: ThreadId;
+  readonly workspaceId: string;
   readonly terminalId: string;
 }
 
 const terminalOwnerKey = (owner: {
-  readonly threadId: string;
+  readonly workspaceId: string;
   readonly terminalId: string;
-}): string => `${owner.threadId}\u0000${owner.terminalId}`;
+}): string => `${owner.workspaceId}\u0000${owner.terminalId}`;
 
 const parseLsofOutput = (
   raw: string,
@@ -177,7 +177,7 @@ const serversEqual = (
       a.url !== b.url ||
       a.processName !== b.processName ||
       a.pid !== b.pid ||
-      a.terminal?.threadId !== b.terminal?.threadId ||
+      a.terminal?.workspaceId !== b.terminal?.workspaceId ||
       a.terminal?.terminalId !== b.terminal?.terminalId
     ) {
       return false;
@@ -350,7 +350,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
   const registerTerminalProcesses: PortDiscovery["Service"]["registerTerminalProcesses"] =
     Effect.fn("PortDiscovery.registerTerminalProcesses")(function* (input) {
       const owner = {
-        threadId: ThreadId.make(input.threadId),
+        workspaceId: input.workspaceId,
         terminalId: input.terminalId,
       };
       const processIds = new Set(

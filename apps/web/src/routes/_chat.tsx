@@ -1,3 +1,5 @@
+import { openProjectTerminal } from "../projectTerminalStore";
+import { ProjectTerminalDialog } from "../components/ProjectTerminalDialog";
 import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useMemo } from "react";
@@ -15,7 +17,8 @@ import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { resolveShortcutCommand } from "../keybindings";
-import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import { selectWorkspaceTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import { useThreadTerminalWorkspace } from "../state/terminalWorkspace";
 import { isPreviewSupportedInRuntime } from "../previewStateStore";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
@@ -42,9 +45,13 @@ function ChatRouteGlobalShortcuts() {
       }).length,
     [primaryEnvironmentId, projectGroupingSettings, projects],
   );
+  const routeTerminalWorkspace = useThreadTerminalWorkspace(routeThreadRef);
   const terminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef
-      ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
+      ? selectWorkspaceTerminalUiState(
+          state.terminalUiStateByWorkspaceKey,
+          routeTerminalWorkspace.ref,
+        ).terminalOpen
       : false,
   );
   // The `previewOpen` shortcut-context flag here uses the store-only value;
@@ -74,6 +81,12 @@ function ChatRouteGlobalShortcuts() {
       if (event.key === "Escape" && selectedThreadKeysSize > 0) {
         event.preventDefault();
         clearSelection();
+        return;
+      }
+
+      if (command === "terminal.toggle" && !routeThreadRef && defaultProjectRef) {
+        event.preventDefault();
+        openProjectTerminal(defaultProjectRef);
         return;
       }
 
@@ -178,6 +191,7 @@ function ChatRouteLayout() {
   return (
     <>
       <ChatRouteGlobalShortcuts />
+      <ProjectTerminalDialog />
       <Outlet />
     </>
   );

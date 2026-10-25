@@ -1,14 +1,19 @@
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { DEFAULT_TERMINAL_ID, type EnvironmentId, type ThreadId } from "@t3tools/contracts";
 import { SymbolView } from "../../components/AppSymbol";
-import { memo, useCallback, useEffect, useMemo, useRef } from "react";
-import { Pressable, View } from "react-native";
+import { memo, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { AppState, Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
+import { useThreadTerminalWorkspace } from "../../state/terminalWorkspace";
 import { terminalEnvironment } from "../../state/terminal";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { useAttachedTerminalSession } from "../../state/use-terminal-session";
+import {
+  useAttachedTerminalSession,
+  useKnownTerminalSessions,
+} from "../../state/use-terminal-session";
+import { cacheSelectedTerminal, getSelectedTerminal } from "./terminalUiState";
 import { TerminalSurface } from "./NativeTerminalSurface";
-import { hasNativeTerminalSurface } from "./nativeTerminalModule";
 import {
   buildThreadTerminalAttachInput,
   type TerminalGridSize,
@@ -30,29 +35,104 @@ const DEFAULT_TERMINAL_ROWS = 24;
 export const ThreadTerminalPanel = memo(function ThreadTerminalPanel(
   props: ThreadTerminalPanelProps,
 ) {
+  const workspace = useThreadTerminalWorkspace({
+    environmentId: props.environmentId,
+    threadId: props.threadId,
+  });
+  const workspaceId = workspace.data?.id;
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
   const resizeTerminal = useAtomCommand(terminalEnvironment.resize, "terminal resize");
-  const closeTerminal = useAtomCommand(terminalEnvironment.close, "terminal close");
-  const openTerminal = useAtomCommand(terminalEnvironment.open, "terminal open");
-  const nativeTerminalAvailable = hasNativeTerminalSurface();
-  const terminalId = DEFAULT_TERMINAL_ID;
+  const openTerminal = useAtomCommand(terminalEnvironment.open, "open shared terminal");
+  const [openFailure, setOpenFailure] = useState<string | null>(null);
+  const [openAttempt, setOpenAttempt] = useState(0);
+  const [selected, setSelected] = useState<{ workspaceId: string; terminalId: string } | null>(
+    null,
+  );
+  const terminalId =
+    selected && selected.workspaceId === workspaceId ? selected.terminalId : DEFAULT_TERMINAL_ID;
+  const knownSessions = useKnownTerminalSessions({
+    environmentId: props.environmentId,
+    workspaceId,
+  });
+  const retainedSession = useEffectEvent((workspaceId: string) => {
+    const retained = getSelectedTerminal({ environmentId: props.environmentId, workspaceId });
+    return knownSessions.find(
+      (session) =>
+        session.target.terminalId === retained &&
+        (session.state.status === "running" || session.state.status === "starting"),
+    );
+  });
+  const cwd = workspace.data?.cwd;
+  const worktreePath = workspace.data?.worktreePath;
+  useEffect(() => {
+    if (!props.visible || !workspaceId || !cwd) return;
+    setOpenFailure(null);
+    const retained = retainedSession(workspaceId);
+    if (retained) {
+      setSelected({ workspaceId, terminalId: retained.target.terminalId });
+      return;
+    }
+    let current = true;
+    void openTerminal({
+      environmentId: props.environmentId,
+      input: {
+        workspaceId,
+        terminalId: DEFAULT_TERMINAL_ID,
+        selectPrimary: true,
+        cwd,
+        worktreePath,
+      },
+    }).then((result) => {
+      if (current && result._tag === "Failure")
+        setOpenFailure(String(squashAtomCommandFailure(result)));
+      if (current && result._tag === "Success") {
+        setSelected({ workspaceId, terminalId: result.value.terminalId });
+        cacheSelectedTerminal({
+          environmentId: props.environmentId,
+          workspaceId,
+          terminalId: result.value.terminalId,
+        });
+      }
+    });
+    return () => {
+      current = false;
+    };
+  }, [
+    props.visible,
+    props.environmentId,
+    workspaceId,
+    cwd,
+    worktreePath,
+    openTerminal,
+    openAttempt,
+  ]);
   const lastGridSizeRef = useRef<TerminalGridSize>({
     cols: DEFAULT_TERMINAL_COLS,
     rows: DEFAULT_TERMINAL_ROWS,
   });
-  const subscriptionIdentity = useMemo<ThreadTerminalSubscriptionIdentity>(
-    () => ({
-      environmentId: props.environmentId,
-      threadId: props.threadId,
+  const subscriptionIdentity = useMemo<ThreadTerminalSubscriptionIdentity | null>(
+    () =>
+      workspaceId && selected?.workspaceId === workspaceId
+        ? {
+            environmentId: props.environmentId,
+            workspaceId,
+            terminalId,
+            cwd: props.cwd,
+            worktreePath: props.worktreePath,
+          }
+        : null,
+    [
+      props.cwd,
+      props.environmentId,
+      workspaceId,
+      props.worktreePath,
       terminalId,
-      cwd: props.cwd,
-      worktreePath: props.worktreePath,
-    }),
-    [props.cwd, props.environmentId, props.threadId, props.worktreePath, terminalId],
+      selected?.workspaceId,
+    ],
   );
   const attachInput = useMemo(
     () =>
-      props.visible
+      props.visible && subscriptionIdentity
         ? buildThreadTerminalAttachInput(subscriptionIdentity, lastGridSizeRef.current)
         : null,
     [props.visible, subscriptionIdentity],
@@ -62,134 +142,63 @@ export const ThreadTerminalPanel = memo(function ThreadTerminalPanel(
     terminal: attachInput,
   });
 
-  const terminalKey = `${props.environmentId}:${props.threadId}:${terminalId}`;
+  const terminalKey = `${props.environmentId}:${workspaceId}:${terminalId}`;
   const isRunning = terminal.status === "running" || terminal.status === "starting";
-
-  // Close the session and dismiss the panel when the process ends while
-  // attached (e.g. typing `exit`), mirroring the web drawer's
-  // onSessionExited flow.
-  const runningTerminalKeyRef = useRef<string | null>(null);
-  const reopenedStaleTerminalKeyRef = useRef<string | null>(null);
-
-  // Attach subscriptions are cached with an idle TTL; reopening the panel
-  // after its session ended reuses the stale stream without a new attach
-  // RPC. Issue an explicit open so the server respawns the session and its
-  // snapshot flows into the live subscription.
-  useEffect(() => {
-    if (isRunning) {
-      reopenedStaleTerminalKeyRef.current = null;
-      return;
-    }
-    if (
-      attachInput === null ||
-      (terminal.status !== "closed" && terminal.status !== "exited") ||
-      terminal.version === 0 ||
-      runningTerminalKeyRef.current === terminalKey ||
-      reopenedStaleTerminalKeyRef.current === terminalKey
-    ) {
-      return;
-    }
-    reopenedStaleTerminalKeyRef.current = terminalKey;
-    void openTerminal({
-      environmentId: props.environmentId,
-      input: {
-        threadId: props.threadId,
-        terminalId,
-        cwd: props.cwd,
-        worktreePath: props.worktreePath,
-        cols: lastGridSizeRef.current.cols,
-        rows: lastGridSizeRef.current.rows,
-      },
-    }).then((result) => {
-      // Release the guard on failure so a later render can retry the respawn.
-      if (result._tag === "Failure" && reopenedStaleTerminalKeyRef.current === terminalKey) {
-        reopenedStaleTerminalKeyRef.current = null;
-      }
-    });
-  }, [
-    attachInput,
-    isRunning,
-    openTerminal,
-    props.cwd,
-    props.environmentId,
-    props.threadId,
-    props.worktreePath,
-    terminal.status,
-    terminal.version,
-    terminalId,
-    terminalKey,
-  ]);
-
-  useEffect(() => {
-    // Forget both markers while hidden: if the process ends while the panel
-    // is unobserved (or was just auto-closed), the next show must take the
-    // stale-reopen path instead of treating it as a live exit or skipping
-    // the respawn.
-    if (attachInput === null) {
-      runningTerminalKeyRef.current = null;
-      reopenedStaleTerminalKeyRef.current = null;
-      return;
-    }
-    if (isRunning) {
-      runningTerminalKeyRef.current = terminalKey;
-      return;
-    }
-    // The web drawer treats both exited and closed as session end.
-    const sessionEnded = terminal.status === "exited" || terminal.status === "closed";
-    if (!sessionEnded || runningTerminalKeyRef.current !== terminalKey) {
-      return;
-    }
-    runningTerminalKeyRef.current = null;
-    // Mark this key handled so the stale-attach effect doesn't respawn the
-    // session the user just ended.
-    reopenedStaleTerminalKeyRef.current = terminalKey;
-    void closeTerminal({
-      environmentId: props.environmentId,
-      input: {
-        threadId: props.threadId,
-        terminalId,
-      },
-    });
-    props.onClose();
-  }, [attachInput, closeTerminal, isRunning, props, terminal.status, terminalId, terminalKey]);
 
   const sendResize = useCallback(
     (size: TerminalGridSize) => {
+      if (!workspaceId || !props.visible || AppState.currentState !== "active") return;
       void resizeTerminal({
         environmentId: props.environmentId,
         input: {
-          threadId: props.threadId,
+          workspaceId,
+          generation: terminal.summary?.generation,
           terminalId,
           cols: size.cols,
           rows: size.rows,
         },
       });
     },
-    [props.environmentId, props.threadId, resizeTerminal, terminalId],
+    [
+      props.environmentId,
+      workspaceId,
+      props.visible,
+      resizeTerminal,
+      terminalId,
+      terminal.summary?.generation,
+    ],
   );
 
   useEffect(() => {
     if (isRunning) {
       sendResize(lastGridSizeRef.current);
     }
-  }, [isRunning, sendResize]);
+  }, [isRunning, workspaceId, sendResize]);
 
   const handleInput = useCallback(
     (data: string) => {
-      if (!isRunning) {
+      if (!isRunning || !workspaceId) {
         return;
       }
 
       void writeTerminal({
         environmentId: props.environmentId,
         input: {
-          threadId: props.threadId,
+          workspaceId,
+          generation: terminal.summary?.generation,
           terminalId,
           data,
         },
       });
     },
-    [isRunning, props.environmentId, props.threadId, terminalId, writeTerminal],
+    [
+      isRunning,
+      props.environmentId,
+      workspaceId,
+      terminalId,
+      writeTerminal,
+      terminal.summary?.generation,
+    ],
   );
 
   const handleResize = useCallback(
@@ -200,13 +209,13 @@ export const ThreadTerminalPanel = memo(function ThreadTerminalPanel(
       }
 
       lastGridSizeRef.current = size;
-      if (!isRunning) {
+      if (!isRunning || !workspaceId) {
         return;
       }
 
       sendResize(size);
     },
-    [isRunning, sendResize],
+    [isRunning, workspaceId, sendResize],
   );
 
   if (!props.visible) {
@@ -221,7 +230,7 @@ export const ThreadTerminalPanel = memo(function ThreadTerminalPanel(
             Terminal
           </Text>
           <Text className="text-2xs text-neutral-500" numberOfLines={1}>
-            {nativeTerminalAvailable ? "Native Ghostty surface" : "Text fallback active"}
+            {workspace.data?.cwd ?? workspace.error ?? "Resolving checkout..."}
           </Text>
         </View>
         <View className="flex-row items-center gap-2">
@@ -238,6 +247,14 @@ export const ThreadTerminalPanel = memo(function ThreadTerminalPanel(
           </Pressable>
         </View>
       </View>
+      {openFailure && (
+        <View className="p-3">
+          <Text>{openFailure}</Text>
+          <Pressable onPress={() => setOpenAttempt((value) => value + 1)}>
+            <Text>Retry opening terminal</Text>
+          </Pressable>
+        </View>
+      )}
       <TerminalSurface
         terminalKey={terminalKey}
         buffer={terminal.buffer}

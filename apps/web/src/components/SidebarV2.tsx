@@ -1,3 +1,4 @@
+import { openProjectTerminal } from "../projectTerminalStore";
 import { autoAnimate } from "@formkit/auto-animate";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -67,7 +68,8 @@ import {
 import { useShortcutModifierState } from "../shortcutModifierState";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
-import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import { selectWorkspaceTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import { useThreadTerminalWorkspace } from "../state/terminalWorkspace";
 import { isMacPlatform } from "~/lib/utils";
 import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { readLocalApi } from "../localApi";
@@ -1427,8 +1429,8 @@ export default function SidebarV2() {
                   : [`This removes ${members.length} grouped project entries.`]),
                 "This permanently clears conversation history for those threads.",
                 isWholeGroup
-                  ? "This removes only the project entries, not the files on disk."
-                  : "Other entries in this grouped project are unaffected.",
+                  ? "This removes the project entries and terminates their shared terminals. Files on disk are kept."
+                  : "This entry's shared terminals will stop. Other entries in this grouped project are unaffected.",
                 "This action cannot be undone.",
               ].join("\n")
             : [
@@ -1442,8 +1444,8 @@ export default function SidebarV2() {
                     ]
                   : [`This removes ${members.length} grouped project entries.`]),
                 isWholeGroup
-                  ? "This removes only the project entries, not the files on disk."
-                  : "Other entries in this grouped project are unaffected.",
+                  ? "This removes the project entries and terminates their shared terminals. Files on disk are kept."
+                  : "This entry's shared terminals will stop. Other entries in this grouped project are unaffected.",
               ].join("\n"),
         ),
       );
@@ -2486,9 +2488,13 @@ export default function SidebarV2() {
 
   // Thread jump (cmd+1..9) and prev/next traversal reuse the same commands as
   // v1 — the keybinding layer is shared, only the ordered list differs.
+  const routeTerminalWorkspace = useThreadTerminalWorkspace(routeThreadRef);
   const routeTerminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef
-      ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
+      ? selectWorkspaceTerminalUiState(
+          state.terminalUiStateByWorkspaceKey,
+          routeTerminalWorkspace.ref,
+        ).terminalOpen
       : false,
   );
   useEffect(() => {
@@ -3070,6 +3076,18 @@ export default function SidebarV2() {
                   key={member.physicalProjectKey}
                   className="grid min-w-0 gap-5 px-6 pb-5 pt-2 sm:gap-4 sm:pb-4 sm:pt-2"
                 >
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setProjectActionsTarget(null);
+                      openProjectTerminal({
+                        environmentId: member.environmentId,
+                        projectId: member.id,
+                      });
+                    }}
+                  >
+                    Open project terminal
+                  </Button>
                   <div className="grid gap-4 sm:grid-cols-2 sm:gap-3">
                     <label className="grid min-w-0 gap-1.5">
                       <span className="font-medium text-foreground">Project name</span>
