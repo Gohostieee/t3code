@@ -2683,15 +2683,10 @@ export function resolveDesktopRuntimeDependencies(
 export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig")(function* (
   updateChannel: "latest" | "nightly",
 ) {
-  const env = yield* Config.all({
-    updateRepository: Config.String("T3CODE_DESKTOP_UPDATE_REPOSITORY").pipe(Config.option),
-    githubRepository: Config.String("GITHUB_REPOSITORY").pipe(Config.option),
-  });
-  const rawRepo = (
-    Option.getOrUndefined(env.updateRepository)?.trim() ||
-    Option.getOrUndefined(env.githubRepository)?.trim() ||
-    ""
-  ).trim();
+  const updateRepository = yield* Config.String("T4CODE_DESKTOP_UPDATE_REPOSITORY").pipe(
+    Config.withDefault(""),
+  );
+  const rawRepo = updateRepository.trim();
   if (!rawRepo) return undefined;
 
   const [owner, repo, ...rest] = rawRepo.split("/");
@@ -2801,10 +2796,16 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     ],
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
-  // A local T4 build must never install an upstream T3 update over itself.
+  // Only an explicit T4 repository may supply updates; previews stay local.
+  const githubPublish =
+    !mockUpdates && !isDesktopPreviewVersion(version)
+      ? yield* resolveGitHubPublishConfig(updateChannel)
+      : undefined;
   buildConfig.publish = mockUpdates
     ? [{ provider: "generic", url: resolveMockUpdateServerUrl(mockUpdateServerPort) }]
-    : null;
+    : githubPublish
+      ? [githubPublish]
+      : null;
 
   if (platform === "mac") {
     const path = yield* Path.Path;

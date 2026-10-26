@@ -512,7 +512,56 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }).pipe(
       Effect.provide(
         ConfigProvider.layer(
-          ConfigProvider.fromEnv({ env: { GITHUB_REPOSITORY: "pingdotgg/t3code" } }),
+          ConfigProvider.fromEnv({
+            env: {
+              GITHUB_REPOSITORY: "pingdotgg/t3code",
+              T3CODE_DESKTOP_UPDATE_REPOSITORY: "pingdotgg/t3code",
+            },
+          }),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("configures the explicit T4 nightly feed while keeping previews local", () =>
+    Effect.gen(function* () {
+      const nightly = yield* createBuildConfig(
+        "win",
+        "nsis",
+        "0.1.2-nightly.20261026.1234",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+      const preview = yield* createBuildConfig(
+        "win",
+        "nsis",
+        "0.1.2-preview.20261026.1234",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+      assert.deepStrictEqual(nightly.publish, [
+        {
+          provider: "github",
+          owner: "Gohostieee",
+          repo: "t3code",
+          releaseType: "prerelease",
+          channel: "nightly",
+        },
+      ]);
+      assert.isNull(preview.publish);
+    }).pipe(
+      Effect.provide(
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({
+            env: {
+              T4CODE_DESKTOP_UPDATE_REPOSITORY: "Gohostieee/t3code",
+              GITHUB_REPOSITORY: "pingdotgg/t3code",
+            },
+          }),
         ),
       ),
     ),
