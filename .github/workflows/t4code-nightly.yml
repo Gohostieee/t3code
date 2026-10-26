@@ -1,0 +1,87 @@
+name: T4 Code nightly
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: t4code-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Build Windows x64
+    if: github.repository == 'Gohostieee/t3code'
+    runs-on: windows-2025
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      T3CODE_TELEMETRY_CHANNEL: dev
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: false
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile -- --side-effects-cache=false
+
+      - name: Ensure Electron runtime
+        run: vp run --filter @t3tools/desktop ensure:electron
+
+      - name: Resolve nightly version
+        id: version
+        run: |
+          $baseVersion = (Get-Content apps/desktop/package.json -Raw | ConvertFrom-Json).version
+          $date = (Get-Date).ToUniversalTime().ToString('yyyyMMdd')
+          "version=$baseVersion-nightly.$date.$env:GITHUB_RUN_NUMBER" >> $env:GITHUB_OUTPUT
+
+      - name: Build installer
+        env:
+          T4_BUILD_VERSION: ${{ steps.version.outputs.version }}
+        run: ./scripts/build-t4-nightly.ps1 -Version $env:T4_BUILD_VERSION
+
+      - name: Record source and checksums
+        env:
+          T4_BUILD_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          @("Version: $env:T4_BUILD_VERSION", "Commit: $env:GITHUB_SHA", "Run: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID") | Set-Content release/t4code/SOURCE.txt
+          Get-ChildItem release/t4code/*.exe | ForEach-Object {
+            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
+          } | Set-Content release/t4code/SHA256SUMS.txt
+
+      - name: Upload installer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: t4code-windows-x64-${{ steps.version.outputs.version }}
+          path: |
+            release/t4code/*.exe
+            release/t4code/*.blockmap
+            release/t4code/SOURCE.txt
+            release/t4code/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
