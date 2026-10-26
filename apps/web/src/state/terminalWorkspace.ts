@@ -6,7 +6,7 @@ import { useThreadShell, useProject } from "./entities";
 import { useEnvironmentQuery } from "./query";
 import { terminalEnvironment } from "./terminal";
 
-export function useTerminalWorkspace(input: {
+function useTerminalWorkspace(input: {
   environmentId: EnvironmentId | null;
   projectId: ProjectId | null;
   worktreePath: string | null;

@@ -15,7 +15,7 @@ interface ProjectInput {
   readonly expectedProjectRoot?: string | undefined;
 }
 
-export class ProjectTerminals extends Context.Service<
+class ProjectTerminals extends Context.Service<
   ProjectTerminals,
   {
     readonly listWorkspaces: (

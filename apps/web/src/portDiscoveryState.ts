@@ -81,18 +81,3 @@ export function useThreadDiscoveredPorts(input: {
     ? ports.filter((port) => port.terminal?.workspaceId === workspace.data?.id)
     : EMPTY_PORTS;
 }
-
-export function useTerminalDiscoveredPorts(input: {
-  readonly environmentId: EnvironmentId | null;
-  readonly workspaceId: string | null;
-  readonly terminalId: string | null;
-}): ReadonlyArray<DiscoveredLocalServer> {
-  const ports = useDiscoveredPorts(input.environmentId);
-  return input.workspaceId && input.terminalId
-    ? ports.filter(
-        (port) =>
-          port.terminal?.workspaceId === input.workspaceId &&
-          port.terminal.terminalId === input.terminalId,
-      )
-    : EMPTY_PORTS;
-}
