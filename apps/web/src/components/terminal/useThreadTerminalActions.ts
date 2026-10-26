@@ -79,8 +79,8 @@ export function useThreadTerminalActions(threadRef: ScopedThreadRef | null) {
     });
     return { terminalId, result };
   };
-  const sessionTarget = (terminalId: string) => ({
-    workspaceId: workspaceRef!.workspaceId,
+  const sessionTarget = (workspaceId: string, terminalId: string) => ({
+    workspaceId,
     terminalId,
     generation: knownSessions?.find((session) => session.target.terminalId === terminalId)?.state
       .summary?.generation,
@@ -89,14 +89,14 @@ export function useThreadTerminalActions(threadRef: ScopedThreadRef | null) {
     if (!workspaceRef || !canWrite()) return;
     void closeTerminalCommand({
       environmentId: workspaceRef.environmentId,
-      input: sessionTarget(terminalId),
+      input: sessionTarget(workspaceRef.workspaceId, terminalId),
     });
   };
   const writeToTerminal = (terminalId: string, data: string) => {
     if (!workspaceRef || !canWrite()) return null;
     return writeTerminal({
       environmentId: workspaceRef.environmentId,
-      input: { ...sessionTarget(terminalId), data },
+      input: { ...sessionTarget(workspaceRef.workspaceId, terminalId), data },
     });
   };
   return {
