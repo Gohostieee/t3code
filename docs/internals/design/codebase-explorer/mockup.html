@@ -1,0 +1,2608 @@
+<!doctype html>
+<html lang="en" data-visualize-standalone>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src 'unsafe-inline' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Codebase Explorer</title>
+<style>:root {
+  color-scheme: light dark;
+  background-color: var(
+    --background,
+    var(--color-background-primary, light-dark(rgb(255 255 255), rgb(24 24 24)))
+  ) !important;
+
+  /* Agent-facing contract; keep in sync with SKILL.md. */
+  --background: var(
+    --color-background-primary,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --card: color-mix(in oklab, var(--foreground) 5%, var(--background));
+  --card-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --popover: var(
+    --color-background-secondary,
+    light-dark(rgb(255 255 255), rgb(45 45 45))
+  );
+  --popover-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --primary: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --primary-foreground: var(
+    --color-text-inverse,
+    light-dark(rgb(255 255 255), rgb(13 13 13))
+  );
+  --secondary: var(
+    --color-background-secondary,
+    light-dark(rgb(255 255 255 / 96%), rgb(54 54 54 / 96%))
+  );
+  --secondary-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --muted: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --muted-foreground: var(
+    --color-text-secondary,
+    light-dark(rgb(26 28 31 / 49.4%), rgb(255 255 255 / 49.8%))
+  );
+  --accent: var(
+    --color-background-info,
+    light-dark(rgb(229 242 255), rgb(13 39 63))
+  );
+  --accent-foreground: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --destructive: var(
+    --color-text-warning,
+    light-dark(rgb(226 85 7), rgb(255 133 73))
+  );
+  --border: var(
+    --color-border-secondary,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+  --input: var(
+    --color-border-primary,
+    light-dark(
+      rgb(26 28 31 / 11.8%),
+      color-mix(in oklab, rgb(0 0 0) 10%, transparent)
+    )
+  );
+  --ring: var(
+    --color-ring-primary,
+    light-dark(rgb(51 156 255), rgb(131 195 255 / 76%))
+  );
+  --font-size-base: var(--font-text-md-size, 16px);
+  --blue: light-dark(rgb(51 156 255), rgb(51 156 255));
+  --orange: light-dark(rgb(226 85 7), rgb(251 106 34));
+  --green: light-dark(rgb(0 162 64), rgb(64 201 119));
+  --red: light-dark(rgb(224 46 42), rgb(255 103 100));
+  --purple: light-dark(rgb(146 79 247), rgb(173 123 249));
+  --yellow: light-dark(rgb(255 195 0), rgb(255 210 64));
+  --viz-series-1: var(--primary);
+  --viz-series-2: light-dark(rgb(243 136 59), rgb(245 154 86));
+  --viz-series-3: light-dark(rgb(93 201 119), rgb(116 213 139));
+  --viz-series-4: light-dark(rgb(235 119 177), rgb(240 143 192));
+  --viz-series-5: light-dark(rgb(155 121 236), rgb(170 145 239));
+  --viz-series-6: light-dark(rgb(58 185 177), rgb(90 203 194));
+
+  /* Internal implementation variables; not part of the agent contract. */
+  --font-sans:
+    -apple-system-body, ui-sans-serif, -apple-system, system-ui, "Segoe UI",
+    Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji",
+    "Segoe UI Symbol";
+  --font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+  --font-size-normal: max(11px, var(--font-size-base));
+  --font-size-tooltip: calc(var(--font-size-base) - 1px);
+  --font-size-small: max(11px, calc(var(--font-size-base) - 2px));
+  --font-size-h1: calc(var(--font-size-normal) * 1.7142857143);
+  --font-size-h2: calc(var(--font-size-normal) * 1.4285714286);
+  --font-size-h3: calc(var(--font-size-normal) * 1.2857142857);
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --icon-size: 16px;
+  --line-height-normal: calc(var(--font-size-normal) * 1.5);
+  --line-height-tooltip: calc(var(--font-size-tooltip) * 1.4285714286);
+  --line-height-small: calc(var(--font-size-small) + 4px);
+  --corner-shape: round;
+  --radius: var(--border-radius-lg, 8px);
+  --radius-sm: calc(var(--radius) * 0.5);
+  --radius-md: calc(var(--radius) * 0.75);
+  --radius-lg: var(--radius);
+  --radius-2xl: calc(var(--radius) * 2);
+  --radius-full: 9999px;
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 8%);
+  --checkmark-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 17 17'%3E%3Cpath d='M12.8961 3.64101C13.1297 3.41418 13.4984 3.37523 13.7779 3.56581C14.0571 3.75635 14.1554 4.11331 14.0299 4.41347L13.9615 4.53847L7.71151 13.7045C7.59411 13.8767 7.4063 13.9877 7.19881 14.0072C6.99136 14.0267 6.78564 13.9533 6.63826 13.806L2.88826 10.056L2.79842 9.9457C2.6192 9.67407 2.64927 9.30496 2.88826 9.06581C3.12738 8.82669 3.49647 8.79676 3.76815 8.97597L3.8785 9.06581L7.03084 12.2182L12.8053 3.74941L12.8961 3.64101Z'/%3E%3C/svg%3E");
+
+  /* Legacy aliases; not part of the current agent contract. */
+  --viz-bg: transparent;
+  --viz-panel: var(--card);
+  --viz-border: var(--border);
+  --viz-text: var(--foreground);
+  --viz-muted: var(--muted-foreground);
+  --viz-accent: var(--primary);
+  --viz-accent-text: var(--primary-foreground);
+  --viz-accent-bg: var(--accent);
+  --viz-font-size: var(--font-size-base);
+  --viz-warning: var(--destructive);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html > body {
+  /* Preserve MCP aliases for older inline renderers without creating :root cycles. */
+  --color-background-primary: var(
+    --background,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --color-text-primary: var(
+    --foreground,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --color-border-secondary: var(
+    --border,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+
+  margin: 0;
+  padding: var(--visualize-paint-gutter, 0px);
+  color: var(--foreground);
+  background: transparent !important;
+  font-family: var(--font-sans) !important;
+  -webkit-font-smoothing: antialiased;
+  font-size: var(--font-size-base);
+  line-height: calc(var(--font-size-base) * 1.625);
+  font-weight: var(--font-weight-normal);
+}
+
+.cursor-interaction {
+  cursor: var(--cursor-interaction, pointer);
+}
+
+a {
+  color: color-mix(in srgb, var(--viz-accent) 80%, var(--viz-text) 20%);
+  cursor: var(--cursor-interaction, pointer);
+  text-decoration: none;
+  text-underline-offset: 2px;
+  font-weight: inherit;
+}
+
+a:is(:hover, :focus-visible) {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-thickness: 0.5px;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin-block: 0;
+}
+p,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+li,
+.table {
+  font-family: var(--font-sans);
+}
+
+h1 {
+  font-size: calc(var(--font-size-base) * 1.5);
+  line-height: 1.3333333333;
+}
+
+h2 {
+  font-size: calc(var(--font-size-base) * 1.25);
+  line-height: 1.4;
+}
+h3 {
+  font-size: calc(var(--font-size-base) * 1.125);
+  line-height: 1.5555555556;
+}
+h4 {
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+}
+h5,
+h6 {
+  font-size: var(--font-size-base);
+  line-height: calc(var(--font-size-base) * 1.625);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+b,
+strong,
+th {
+  font-weight: 600;
+}
+
+code:not(pre code) {
+  display: inline;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  corner-shape: var(--corner-shape);
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  word-break: break-word;
+}
+pre,
+pre code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.table {
+  width: 100%;
+  color: var(--foreground);
+  font: inherit;
+  text-align: start;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: calc(var(--font-size-base) * 0.875);
+  line-height: calc(var(--font-size-base) * 1.625);
+  font-family: var(--font-sans);
+}
+
+.table :is(th, td) {
+  padding-block: 10px;
+  padding-inline: 0 24px;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--border);
+  text-align: start;
+  vertical-align: top;
+  border-bottom-color: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+.table :is(th, td):not(:last-child) {
+  padding-inline-end: calc(var(--font-size-base) * 1.5);
+}
+
+.table-responsive > .table :is(th, td) {
+  overflow-wrap: break-word;
+}
+
+.table :is(th, td):last-child {
+  padding-inline-end: 0;
+}
+
+.table :is(caption, thead th) {
+  font-weight: 600;
+}
+
+.table thead :is(th, td) {
+  border-bottom-color: var(--border-strong, var(--input));
+  padding-block: calc(var(--font-size-base) / 2);
+  line-height: var(--font-size-base);
+}
+
+.table tbody tr:last-child :is(th, td) {
+  border-bottom: 0;
+}
+.table tbody :is(th, td) {
+  padding-block: calc(var(--font-size-base) * 0.625);
+}
+
+.table.table-sm :is(th, td) {
+  padding-block: 8px;
+}
+
+.table.table-sm :is(th, td):not(:last-child) {
+  padding-inline-end: 16px;
+}
+
+.table :is(.text-end, [align="right"]) {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.table :is(.text-center, [align="center"]) {
+  text-align: center;
+}
+
+.table .text-nowrap {
+  white-space: nowrap;
+}
+
+#widget {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  background: transparent !important;
+}
+
+.card {
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  border-radius: var(--radius-2xl);
+  corner-shape: var(--corner-shape);
+  color: var(--card-foreground);
+  background: var(--card);
+}
+
+.widget {
+  min-width: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-lg);
+  corner-shape: var(--corner-shape);
+  box-shadow: 0 0 0 0.5px var(--border-strong, var(--border));
+  color: var(--foreground);
+  background: var(--background);
+}
+
+#widget > :not(.card, .widget, .progress) {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: min(
+    20rem,
+    var(--tooltip-available-width, calc(100vw - 10px)),
+    calc(100vw - 10px)
+  );
+  max-height: min(
+    var(--tooltip-available-height, calc(100vh - 10px)),
+    calc(100vh - 10px)
+  );
+  border: 1px solid var(--border);
+  corner-shape: var(--corner-shape);
+  overflow-wrap: break-word;
+  white-space: normal;
+  pointer-events: none;
+  user-select: none;
+  font-family: var(--font-sans);
+  padding: 5px 12px;
+  border-color: color-mix(
+    in oklab,
+    light-dark(var(--primary-foreground), var(--foreground)) 5%,
+    transparent
+  );
+  border-radius: var(--radius-2xl);
+  color: light-dark(var(--primary-foreground), var(--foreground));
+  background: light-dark(var(--foreground), var(--popover));
+  box-shadow: 0 8px 18px rgb(15 23 42 / 20%);
+  letter-spacing: -0.15px;
+  font-size: calc(var(--font-size-base) * 14 / 16);
+  font-size: round(nearest, calc(var(--font-size-base) * 14 / 16), 1px);
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+
+.viz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(max(180px, 24%), 1fr));
+  gap: 10px;
+}
+
+.viz-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.viz-stat-value {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+.viz-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+hr {
+  width: 100%;
+  height: 1px;
+  margin-block: 6px;
+  border: 0;
+  background: var(--border);
+}
+
+.nav {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.progress {
+  display: flex;
+  height: 8px;
+  margin-block: calc((var(--line-height-normal, 1.5em) - 8px) / 2);
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+}
+
+.progress-bar:only-child {
+  border-radius: var(--radius-full);
+}
+
+.progress-bar {
+  height: 100%;
+  flex-shrink: 0;
+  border: 0;
+  background: var(--viz-series-1);
+}
+
+.viz-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  color: color-mix(in srgb, var(--foreground) 40%, var(--muted-foreground));
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  font-family: var(--font-sans);
+  font-size: calc(var(--font-size-base) * 14 / 16);
+  font-size: round(nearest, calc(var(--font-size-base) * 14 / 16), 1px);
+  font-weight: var(--font-weight-normal);
+  line-height: 1;
+}
+
+small,
+.text-small {
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+}
+
+.text-muted {
+  color: var(--muted-foreground);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.viz-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.viz-controls > .form-label {
+  display: grid;
+  min-width: min(100%, 260px);
+  flex: 1 1 280px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin-bottom: 0;
+}
+
+.viz-controls > .form-label > :is(.form-control, .form-range, .form-select) {
+  grid-column: 1 / -1;
+}
+
+.btn,
+.nav-link,
+.form-check-input,
+.form-control,
+.form-range,
+.form-select {
+  font: inherit;
+}
+
+/* Match inline alignment without overriding a containing flex or grid layout. */
+.btn,
+.nav-link,
+.form-control,
+.form-select,
+.form-range,
+.form-check {
+  vertical-align: middle;
+}
+
+.btn,
+.nav-link {
+  appearance: button;
+  display: inline-flex;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 8px;
+  -webkit-app-region: no-drag;
+  border: 1px solid var(--input);
+  corner-shape: var(--corner-shape);
+  cursor: var(--cursor-interaction, pointer);
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-font-smoothing: inherit;
+  font-family: var(--font-sans);
+  height: fit-content;
+  min-height: calc(12px + 2 * var(--control-spacing, 12px));
+  padding-inline: var(--control-spacing, 12px);
+  border-color: transparent;
+  border-radius: var(--radius-full);
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  font-size: calc(var(--font-size-base) * 14 / 16);
+  font-size: round(nearest, calc(var(--font-size-base) * 14 / 16), 1px);
+  font-weight: var(--font-weight-normal);
+  line-height: 18px;
+}
+
+.btn {
+  border-color: var(--border);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+}
+
+.btn:is(.btn-block, .viz-tile) {
+  inline-size: 100%;
+}
+
+.btn.viz-tile {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+a.btn {
+  cursor: var(--cursor-interaction, pointer);
+  text-decoration: none;
+}
+
+.btn:not(:disabled):hover {
+  background: light-dark(
+    color-mix(in srgb, var(--foreground) 5.5%, transparent),
+    color-mix(in srgb, var(--foreground) 8%, transparent)
+  );
+}
+
+.nav-link:not(:disabled):not([aria-disabled="true"]):hover {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.btn-primary {
+  border-color: var(--border);
+  color: var(--primary-foreground);
+  background: var(--foreground);
+  background-clip: border-box;
+}
+
+.btn-primary .text-muted {
+  color: color-mix(in srgb, var(--primary-foreground) 50%, transparent);
+}
+
+.btn-primary:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 80%, transparent);
+  background-clip: border-box;
+}
+
+.btn-ghost {
+  border-color: transparent;
+  color: var(--muted-foreground);
+  background: transparent;
+}
+
+.btn-ghost:not(:disabled):hover {
+  color: var(--muted-foreground);
+  background: light-dark(
+    color-mix(in srgb, var(--foreground) 5.5%, transparent),
+    color-mix(in srgb, var(--foreground) 8%, transparent)
+  );
+}
+
+.nav-pills .nav-link {
+  min-width: 0;
+  border-color: transparent;
+  color: var(--muted-foreground);
+  background: transparent;
+}
+
+.nav-justified .nav-link {
+  flex: 1 1 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.nav-pills .nav-link.active {
+  color: var(--foreground);
+  background: var(--muted);
+}
+
+/* Shared preview chrome; product styles stay inside each variant. */
+.viz-dotted-background {
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--foreground) 14%, transparent) 0.8px,
+    transparent 0.8px
+  );
+  background-position: center;
+  background-size: 16px 16px;
+}
+
+.viz-carousel {
+  position: relative;
+  min-width: 0;
+}
+
+.viz-carousel:has(> .viz-carousel-controls) {
+  min-height: calc(60px + var(--viz-carousel-picker-height, 0px));
+  padding-bottom: 60px;
+}
+
+.viz-carousel > [data-variant][hidden] {
+  display: none !important;
+}
+
+.viz-carousel > [data-variant] {
+  isolation: isolate;
+}
+
+.viz-carousel-controls {
+  --viz-carousel-hover: light-dark(
+    color-mix(in srgb, var(--foreground) 5.4%, transparent),
+    color-mix(in srgb, var(--foreground) 7.8%, transparent)
+  );
+  position: absolute;
+  z-index: 2;
+  bottom: 8px;
+  left: 50%;
+  display: flex;
+  width: max-content;
+  /* Leave room for the host's design-controls launcher at the trailing edge. */
+  max-width: calc(100% - 96px);
+  align-items: center;
+  gap: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  color: var(--foreground);
+  background: var(--background);
+  font-family: var(--font-sans);
+  /* Match the settings dropdown chrome independently of the content font size. */
+  font-size: 13px;
+  font-weight: var(--font-weight-normal);
+  line-height: 18px;
+  transform: translateX(-50%);
+  user-select: none;
+}
+
+/* Keep authored mockup button styles out of the shared carousel chrome. */
+.viz-carousel-controls button,
+.viz-carousel-picker > summary {
+  display: flex !important;
+  height: auto !important;
+  min-height: 30px;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 4px;
+  padding: 0 6px !important;
+  -webkit-app-region: no-drag;
+  border: 0 !important;
+  border-radius: 14px !important;
+  color: inherit !important;
+  background: transparent !important;
+  font: inherit !important;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.viz-carousel-controls > button,
+.viz-carousel-picker > summary {
+  position: relative;
+  isolation: isolate;
+}
+
+.viz-carousel-controls > button {
+  --icon-size: 16px;
+  width: 30px !important;
+  padding: 0 !important;
+}
+
+.viz-carousel-picker > summary {
+  padding-inline: 12px !important;
+}
+
+.viz-carousel-controls .viz-carousel-caret {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  margin: 0;
+  color: inherit;
+  transform: rotate(180deg);
+}
+
+.viz-carousel-controls > button > svg,
+.viz-carousel-controls .viz-carousel-caret,
+.viz-carousel-count {
+  opacity: 0.5;
+}
+
+.viz-carousel-controls > button::before,
+.viz-carousel-picker > summary::before {
+  position: absolute;
+  z-index: -1;
+  inset: 3px;
+  border-radius: 12px;
+  content: "";
+  pointer-events: none;
+}
+
+.viz-carousel-controls > button:hover::before,
+.viz-carousel-picker > summary:hover::before {
+  background: var(--viz-carousel-hover);
+}
+
+.viz-carousel-controls > button,
+.viz-carousel-controls [data-lucide],
+.viz-carousel-controls .lucide {
+  flex-shrink: 0;
+}
+
+.viz-carousel-picker {
+  min-width: 0;
+}
+
+.viz-carousel-picker > summary {
+  min-width: 0;
+  list-style: none;
+}
+
+.viz-carousel-picker > summary::-webkit-details-marker {
+  display: none;
+}
+
+.viz-carousel-count {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.viz-carousel-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viz-carousel-options {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 4px);
+  left: 0;
+  display: flex;
+  max-height: 240px;
+  flex-direction: column;
+  gap: 2px;
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--background);
+  box-shadow: 0 4px 12px light-dark(rgb(0 0 0 / 6%), rgb(0 0 0 / 25%));
+}
+
+.viz-carousel-options > button {
+  border-radius: max(0px, calc(var(--radius-lg) - 5px)) !important;
+  width: 100% !important;
+  min-height: 28px;
+  justify-content: flex-start !important;
+  padding: 4px 8px !important;
+  font-size: var(--font-size-small) !important;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.viz-carousel-options > [aria-current="true"],
+.viz-carousel-options > button:hover {
+  background: var(--viz-carousel-hover) !important;
+}
+
+.btn:disabled,
+.nav-link:disabled,
+.nav-link[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+[data-lucide] {
+  stroke-width: 1.6;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--foreground);
+}
+
+.form-control {
+  display: block;
+  width: 100%;
+  padding: 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  corner-shape: var(--corner-shape);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  height: calc(12px + 2 * var(--control-spacing, 12px));
+  min-height: calc(12px + 2 * var(--control-spacing, 12px));
+  padding-inline: calc(4px + var(--control-spacing, 12px) / 2);
+  border-color: var(--input);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--popover) 96%, transparent);
+  font-size: calc(var(--font-size-base) * 14 / 16);
+  font-size: round(nearest, calc(var(--font-size-base) * 14 / 16), 1px);
+  font-weight: var(--font-weight-normal);
+  line-height: 1.4285714286;
+}
+.form-control:is(
+  [type="file"],
+  [type="date"],
+  [type="datetime-local"],
+  [type="month"],
+  [type="week"],
+  [type="color"]
+) {
+  height: calc(12px + 2 * var(--control-spacing, 12px));
+  min-height: calc(12px + 2 * var(--control-spacing, 12px));
+  line-height: 18px;
+}
+.form-control:is(
+  [type="date"],
+  [type="datetime-local"],
+  [type="month"],
+  [type="week"]
+) {
+  padding-inline: var(--control-spacing, 12px);
+}
+
+.form-control::placeholder {
+  color: var(--muted-foreground);
+}
+
+.form-control[type="file"] {
+  overflow: hidden;
+  cursor: var(--cursor-interaction, pointer);
+  padding: 0;
+}
+
+.form-control[type="file"]::file-selector-button {
+  padding: 0 8px;
+  border: 0;
+  border-right: 1px solid var(--input);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: inherit;
+  font: inherit;
+  min-height: calc(10px + 2 * var(--control-spacing, 12px));
+  padding-inline: var(--control-spacing, 12px);
+  margin-inline-end: var(--control-spacing, 12px);
+}
+
+.form-control[type="file"]:not(:disabled):hover::file-selector-button {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-control-color[type="color"] {
+  width: 40px;
+  height: calc(12px + 2 * var(--control-spacing, 12px));
+  padding: 3px;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control-color[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.form-control-color[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: calc(var(--radius-lg) - 4px);
+  corner-shape: var(--corner-shape);
+}
+
+textarea.form-control {
+  height: auto;
+  resize: vertical;
+  min-height: 96px;
+  padding: 8px 10px;
+}
+
+.form-control:focus-visible {
+  border-color: var(--ring);
+  box-shadow: none;
+}
+.form-control:disabled {
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  opacity: 1;
+}
+.form-control[aria-invalid="true"] {
+  border-color: var(--red);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--red) 20%, transparent);
+}
+
+.form-control:disabled,
+.form-select:disabled {
+  cursor: not-allowed;
+}
+
+.form-select {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: fit-content;
+  min-height: calc(12px + 2 * var(--control-spacing, 12px));
+  margin: 0;
+  /* The secondary icon role is 14px at compact density and 16px at web density. */
+  --icon-size: calc(10px + var(--control-spacing, 12px) / 2);
+  /* Settings dropdowns retain a 12px inset and a 4px text-to-chevron gap. */
+  padding: 0 calc(16px + var(--icon-size)) 0 12px;
+  outline: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  corner-shape: var(--corner-shape);
+  color: var(--foreground);
+  background-color: var(--secondary);
+  background-image:
+    linear-gradient(
+      45deg,
+      transparent calc(50% - 0.6px),
+      var(--muted-foreground) calc(50% - 0.6px) calc(50% + 0.6px),
+      transparent calc(50% + 0.6px)
+    ),
+    linear-gradient(
+      135deg,
+      transparent calc(50% - 0.6px),
+      var(--muted-foreground) calc(50% - 0.6px) calc(50% + 0.6px),
+      transparent calc(50% + 0.6px)
+    );
+  background-position:
+    calc(100% - 12px - var(--icon-size) / 2) 50%,
+    calc(100% - 12px - var(--icon-size) * 0.18) 50%;
+  background-repeat: no-repeat;
+  background-size: calc(var(--icon-size) * 0.32) calc(var(--icon-size) * 0.32);
+  cursor: var(--cursor-interaction, default);
+  font-size: calc(var(--font-size-base) * 14 / 16);
+  font-size: round(nearest, calc(var(--font-size-base) * 14 / 16), 1px);
+  font-weight: var(--font-weight-normal);
+  line-height: 18px;
+}
+
+.form-select option {
+  color: var(--popover-foreground);
+  background-color: var(--popover);
+}
+
+.form-select:not(:disabled):hover {
+  background-color: light-dark(
+    color-mix(in srgb, var(--foreground) 5.5%, transparent),
+    color-mix(in srgb, var(--foreground) 8%, transparent)
+  );
+}
+
+.form-select:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+.form-select:disabled {
+  opacity: 0.4;
+}
+
+.form-check {
+  display: flex;
+  min-height: calc(12px + 2 * var(--control-spacing, 12px));
+  align-items: center;
+  gap: 6px;
+}
+
+.form-check-input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  margin: 0;
+  border: 1px solid var(--input);
+  color: var(--primary-foreground);
+  background-color: transparent;
+  cursor: var(--cursor-interaction, default);
+  transition:
+    background-color 150ms,
+    border-color 150ms,
+    box-shadow 150ms;
+}
+
+.form-check:not(.form-switch) .form-check-input[type="checkbox"] {
+  corner-shape: round;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  width: calc(10px + var(--control-spacing, 12px) / 2);
+  height: calc(10px + var(--control-spacing, 12px) / 2);
+  border-color: var(--border-strong, var(--input));
+  border-radius: calc(var(--radius-sm) / 2);
+  background-color: transparent;
+  color: var(--foreground);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input:not(:disabled):not(:checked):hover {
+  background-color: var(--card);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input[type="checkbox"]:is(:checked, :indeterminate) {
+  border-color: var(--border-strong, var(--input));
+  background-color: color-mix(in srgb, var(--popover) 96%, transparent);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input[type="checkbox"]:checked::before {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--primary-foreground);
+  content: "";
+  mask: var(--checkmark-image) center / 12px 12px no-repeat;
+  background-color: var(--foreground);
+}
+.form-check:not(.form-switch)
+  .form-check-input[type="checkbox"]:indeterminate::before {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 65%;
+  height: 6.65%;
+  margin: auto;
+  border-radius: var(--radius-full);
+  background: var(--foreground);
+  mask: none;
+  content: "";
+}
+
+.form-check-input[type="radio"] {
+  border-radius: var(--radius-full);
+  width: 16px;
+  height: 16px;
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--input);
+}
+
+.form-check-input[type="radio"]:checked {
+  border: 0;
+  background: radial-gradient(
+    circle,
+    var(--primary-foreground) 0 3px,
+    var(--foreground) 3px
+  );
+  box-shadow: none;
+}
+
+.form-check:not(.form-switch) .form-check-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.form-check:not(.form-switch) .form-check-input[type="checkbox"]:focus-visible {
+  border-color: var(--ring);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled {
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+}
+.form-check:not(.form-switch) .form-check-input[type="radio"]:disabled,
+.form-check:not(.form-switch)
+  .form-check-input[type="radio"]:disabled
+  + .form-check-label {
+  opacity: 0.5;
+}
+
+.form-switch .form-check-input:disabled,
+.form-switch .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.form-check-label {
+  color: var(--foreground);
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-switch .form-check-input {
+  position: relative;
+  width: 32px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  box-shadow: none;
+  transition: background-color 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1px solid light-dark(var(--primary-foreground), var(--foreground));
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-sm);
+  content: "";
+  transform: translate(2px, -50%);
+  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
+  border-color: #fff;
+  background: #fff;
+}
+
+.form-switch .form-check-input:checked {
+  background: var(--blue);
+}
+
+.form-switch .form-check-input:checked::before {
+  transform: translate(14px, -50%);
+}
+
+.form-switch .form-check-input:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+  outline: none;
+}
+
+.form-range {
+  appearance: none;
+  display: block;
+  width: 100%;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  accent-color: var(--primary);
+  height: calc(12px + 2 * var(--control-spacing, 12px));
+  min-height: calc(12px + 2 * var(--control-spacing, 12px));
+  outline: none;
+  border-radius: var(--radius-full);
+  color: var(--foreground);
+  background: transparent;
+}
+
+.form-range::-webkit-slider-runnable-track {
+  background: var(--form-range-track, var(--border));
+  height: 2px;
+  border-radius: var(--radius-full);
+}
+
+.form-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  margin-top: -9px;
+  border-color: transparent;
+  background: currentColor;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Outline the native track and thumb, preserving the larger input hit area. */
+.form-range:focus-visible::-webkit-slider-runnable-track {
+  outline: 2px auto Highlight;
+  outline-color: -webkit-focus-ring-color;
+}
+
+.form-range::-moz-range-track {
+  background: var(--form-range-track, var(--border));
+  height: 2px;
+  border-radius: var(--radius-full);
+}
+
+.form-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  border-color: transparent;
+  background: currentColor;
+  box-shadow: var(--shadow-sm);
+}
+
+.form-range:focus-visible::-moz-range-thumb {
+  outline: 2px solid Highlight;
+  outline-offset: 2px;
+}
+
+.form-range:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.btn:not(.btn-primary, .viz-tile):is(
+  [aria-pressed="true"],
+  [aria-selected="true"],
+  .is-selected
+) {
+  border-color: transparent;
+  color: var(--primary-foreground);
+  background: var(--blue);
+}
+
+.btn.viz-tile:is([aria-pressed="true"], [aria-selected="true"], .is-selected) {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.btn:focus-visible,
+.nav-link:focus-visible {
+  outline-offset: 2px;
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.viz-carousel-controls :is(button, summary):focus-visible {
+  outline: 2px solid var(--ring) !important;
+  outline-offset: 2px !important;
+}
+
+/* Web recipes are the default, including on renderers without inline style queries. */
+@supports (border-radius: if(style(--corner-shape: round): 1px; else: 2px)) {
+  /* Match the host's proportional text-sm scale at every text preference. */
+  .tooltip,
+  .viz-badge,
+  .btn,
+  .nav-link,
+  .form-control,
+  .form-select {
+    font-size: if(
+      style(--corner-shape: round): round(
+          nearest,
+          calc(var(--font-size-base) * 14 / 16),
+          1px
+        );
+        else: round(nearest, calc(var(--font-size-base) * 13 / 14), 1px)
+    );
+  }
+
+  .btn,
+  .nav-link,
+  .form-select {
+    border-radius: if(
+      style(--corner-shape: round): var(--radius-full); else: var(--radius-lg)
+    );
+  }
+
+  .form-check:not(.form-switch) .form-check-input[type="checkbox"] {
+    border-radius: if(
+      style(--corner-shape: round): calc(var(--radius-sm) / 2);
+        else: calc(var(--radius-lg) * 0.4)
+    );
+  }
+
+  .tooltip {
+    font-weight: if(
+      style(--corner-shape: round): 600; else: var(--font-weight-normal)
+    );
+  }
+}
+
+@media (pointer: coarse) {
+  .viz-carousel:has(> .viz-carousel-controls) {
+    min-height: calc(76px + var(--viz-carousel-picker-height, 0px));
+    padding-bottom: 76px;
+  }
+
+  .btn,
+  .nav-link,
+  .viz-carousel-controls button,
+  .viz-carousel-picker > summary,
+  .form-control,
+  .form-select {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* Keep small-screen WebKit from zooming when a text field receives focus. */
+  .form-control,
+  .form-select {
+    font-size: max(16px, calc(var(--font-size-base) * 14 / 16));
+    font-size: max(
+      16px,
+      round(nearest, calc(var(--font-size-base) * 14 / 16), 1px)
+    );
+  }
+  .form-control:is(
+    [type="file"],
+    [type="date"],
+    [type="datetime-local"],
+    [type="month"],
+    [type="week"],
+    [type="time"],
+    [type="color"]
+  ) {
+    height: 44px;
+    min-height: 44px;
+    font-size: max(16px, calc(var(--font-size-base) * 14 / 16));
+    font-size: max(
+      16px,
+      round(nearest, calc(var(--font-size-base) * 14 / 16), 1px)
+    );
+  }
+
+  .form-control[type="file"]::file-selector-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .form-control-color[type="color"] {
+    width: 44px;
+    height: 44px;
+  }
+
+  .form-control:is(
+    [type="date"],
+    [type="datetime-local"],
+    [type="month"],
+    [type="time"],
+    [type="week"]
+  ) {
+    min-width: 0;
+    max-width: 100%;
+    padding-block: 8px;
+  }
+
+  .form-check {
+    min-height: 44px;
+    padding-inline: 15px;
+  }
+
+  .form-check-input {
+    position: relative;
+  }
+
+  .form-check-input::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    content: "";
+    transform: translate(-50%, -50%);
+  }
+
+  .form-check-label {
+    display: inline-flex;
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+  }
+
+  .form-range {
+    height: 44px;
+    touch-action: pan-y;
+  }
+}
+
+svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+#widget > svg {
+  width: 100%;
+}
+
+/* Model-authored chart rules can otherwise stretch icons after these styles load. */
+svg.lucide {
+  display: block;
+  width: var(--icon-size) !important;
+  height: var(--icon-size) !important;
+  flex: none;
+  margin: 0 !important;
+  stroke-width: 1.6;
+}
+
+.text-warning,
+.text-destructive {
+  color: var(--destructive);
+}
+
+html>body{padding:16px;max-width:1600px;margin:auto}</style>
+</head>
+<body>
+<script type="application/json" id="codex-visualization-widget-state">null</script>
+<script>(() => {
+  const root = document.documentElement;
+  const mediaQuery = globalThis.matchMedia("(prefers-color-scheme: dark)");
+  const apply = Reflect.apply;
+  const isArray = Array.isArray;
+  const hasOwn = Object.hasOwn;
+  const parentWindow = globalThis.parent;
+  const stringify = JSON.stringify;
+  const parse = JSON.parse;
+  const encode = TextEncoder.prototype.encode.bind(new TextEncoder());
+  const initialStateElement = document.getElementById(
+    "codex-visualization-widget-state",
+  );
+  const initialGlobals = parse(initialStateElement?.textContent ?? "{}");
+  initialStateElement?.remove();
+  /** @type {Record<string, unknown> | null} */
+  let state = initialGlobals.widgetState ?? null;
+  const statePersistence = initialGlobals.statePersistence ?? "none";
+  let nextStateRequestId = 0;
+  /** @type {Map<number, { resolve: () => void; reject: (error: Error) => void; timeout: ReturnType<typeof globalThis.setTimeout>; serializedState: string }>} */
+  const pendingStateWrites = new Map();
+  const persistenceError = () =>
+    Object.assign(
+      new Error("The host could not persist the widget state update"),
+      {
+        code: -32000,
+        data: { code: "widget_state_persistence_failed", retryable: false },
+      },
+    );
+  /**
+   * @param {object} prototype
+   * @param {string} property
+   */
+  const getPrototypeGetter = (prototype, property) => {
+    // oxlint-disable-next-line typescript/unbound-method -- invoked through captured Reflect.apply
+    const getter = Object.getOwnPropertyDescriptor(prototype, property)?.get;
+    if (getter == null) {
+      throw new Error(`Missing ${property} getter`);
+    }
+    return getter;
+  };
+  const getMessageData = getPrototypeGetter(MessageEvent.prototype, "data");
+  const getMessagePorts = getPrototypeGetter(MessageEvent.prototype, "ports");
+  const getMessageSource = getPrototypeGetter(MessageEvent.prototype, "source");
+  // oxlint-disable-next-line typescript/unbound-method -- captured before the untrusted fragment runs
+  const addHostMessageListener = MessagePort.prototype.addEventListener;
+  // oxlint-disable-next-line typescript/unbound-method -- captured before the untrusted fragment runs
+  const postHostMessage = MessagePort.prototype.postMessage;
+  // oxlint-disable-next-line typescript/unbound-method -- captured before the untrusted fragment runs
+  const startHostPort = MessagePort.prototype.start;
+  // oxlint-disable-next-line typescript/unbound-method -- captured before the untrusted fragment runs
+  const stopMessagePropagation = Event.prototype.stopImmediatePropagation;
+  /** @type {MessagePort | null} */
+  let hostPort = null;
+  const postToHost = (type, payload) => {
+    if (hostPort != null) {
+      apply(postHostMessage, hostPort, [{ type, ...payload }]);
+    }
+  };
+  const openExternal = ({ href }) => {
+    if (globalThis.navigator.userActivation?.isActive === true) {
+      postToHost("open-external", { href });
+    }
+  };
+  const sendFollowUpMessage = ({ context, prompt, title }) => {
+    if (globalThis.navigator.userActivation?.isActive === true) {
+      postToHost("follow-up", { context, prompt, title });
+    }
+    return Promise.resolve();
+  };
+  /**
+   * @param {Record<string, unknown> | ((previous: Record<string, unknown> | null) => Record<string, unknown>)} next
+   * @returns {Promise<void>}
+   */
+  const setWidgetState = async (next) => {
+    const nextState = typeof next === "function" ? next(state) : next;
+    if (
+      nextState == null ||
+      typeof nextState !== "object" ||
+      isArray(nextState)
+    ) {
+      throw new TypeError("Widget state must be a JSON object");
+    }
+    const inputState = stringify(
+      nextState,
+      (_key, /** @type {unknown} */ value) => {
+        if (
+          typeof value === "undefined" ||
+          typeof value === "function" ||
+          typeof value === "symbol" ||
+          (typeof value === "number" && !Number.isFinite(value))
+        ) {
+          throw new TypeError("Widget state must be a JSON object");
+        }
+        return value;
+      },
+    );
+    const parsedState = parse(inputState);
+    if (
+      parsedState == null ||
+      typeof parsedState !== "object" ||
+      isArray(parsedState)
+    ) {
+      throw new TypeError("Widget state must be a JSON object");
+    }
+    const storedState = {
+      modelContent: null,
+      privateContent: null,
+      ...parsedState,
+    };
+    const serializedState = stringify(storedState);
+    if (encode(serializedState).length > 16 * 1024) {
+      throw new TypeError(
+        "Widget state must be a JSON object of at most 16 KiB",
+      );
+    }
+    if (
+      hasOwn(storedState, "imageIds") &&
+      (!isArray(storedState.imageIds) ||
+        storedState.imageIds.some(
+          (/** @type {unknown} */ id) => typeof id !== "string",
+        ))
+    ) {
+      throw new TypeError("Widget state imageIds must be an array of strings");
+    }
+    if (storedState.imageIds?.length > 0) {
+      throw Object.assign(
+        new TypeError("Visualization state does not support image attachments"),
+        { code: -32602, data: { code: "images_unsupported" } },
+      );
+    }
+    state = storedState;
+    globalThis.openai.widgetState = state;
+    globalThis.dispatchEvent(
+      new CustomEvent("openai:set_globals", {
+        detail: { globals: { widgetState: state } },
+      }),
+    );
+    if (statePersistence === "none") {
+      throw persistenceError();
+    }
+    const id = ++nextStateRequestId;
+    return new Promise((resolve, reject) => {
+      const timeout = globalThis.setTimeout(() => {
+        pendingStateWrites.delete(id);
+        reject(persistenceError());
+      }, 30_000);
+      pendingStateWrites.set(id, { resolve, reject, timeout, serializedState });
+      postToHost("widget-state-write", { id, state: serializedState });
+    });
+  };
+  const syncTheme = () => {
+    const theme = mediaQuery.matches ? "dark" : "light";
+    root.dataset.theme = theme;
+    globalThis.openai = {
+      ...globalThis.openai,
+      openExternal,
+      sendFollowUpMessage,
+      setWidgetState,
+      theme,
+      visualizationStyleVariables: {},
+      visualizationTheme: theme,
+      widgetState: state,
+      statePersistence,
+      stateModelContext: "none",
+    };
+    globalThis.dispatchEvent(
+      new CustomEvent("openai:set_globals", {
+        detail: { globals: globalThis.openai },
+      }),
+    );
+  };
+  const sendHeight = () => {
+    postToHost("height", {
+      height: Math.ceil(
+        Math.max(
+          document.body.scrollHeight,
+          document.body.getBoundingClientRect().height,
+        ),
+      ),
+    });
+  };
+
+  globalThis.addEventListener(
+    "message",
+    (event) => {
+      const data = apply(getMessageData, event, []);
+      const ports = apply(getMessagePorts, event, []);
+      const source = apply(getMessageSource, event, []);
+      if (
+        hostPort != null ||
+        source !== parentWindow ||
+        typeof data !== "object" ||
+        data?.type !== "codex-visualization-initialize" ||
+        !isArray(ports) ||
+        ports.length !== 1
+      ) {
+        return;
+      }
+      apply(stopMessagePropagation, event, []);
+      const nextHostPort = ports[0];
+      try {
+        apply(addHostMessageListener, nextHostPort, [
+          "message",
+          (event) => {
+            const data = apply(getMessageData, event, []);
+            if (typeof data === "object" && data?.type === "measure") {
+              sendHeight();
+            } else if (
+              typeof data === "object" &&
+              data?.type === "widget-state-result"
+            ) {
+              /** @type {unknown} */
+              const id = data.id;
+              if (typeof id !== "number") {
+                return;
+              }
+              const pending = pendingStateWrites.get(id);
+              if (pending != null) {
+                pendingStateWrites.delete(id);
+                globalThis.clearTimeout(pending.timeout);
+                if (data.ok === true) {
+                  pending.resolve();
+                } else {
+                  pending.reject(persistenceError());
+                }
+              }
+            }
+          },
+        ]);
+        apply(startHostPort, nextHostPort, []);
+      } catch {
+        return;
+      }
+      hostPort = nextHostPort;
+      for (const [id, { serializedState }] of pendingStateWrites) {
+        postToHost("widget-state-write", { id, state: serializedState });
+      }
+      sendHeight();
+    },
+    { capture: true },
+  );
+  document.currentScript?.remove();
+  mediaQuery.addEventListener("change", syncTheme);
+  globalThis.addEventListener("click", (event) => {
+    if (event.defaultPrevented) {
+      return;
+    }
+    let element = null;
+    if (event.target instanceof globalThis.Element) {
+      element = event.target;
+    } else if (event.target instanceof globalThis.Node) {
+      element = event.target.parentElement;
+    }
+    const link = element?.closest("a[href]");
+    const href = link?.getAttribute("href");
+    if (href == null) {
+      return;
+    }
+    if (href.startsWith("#")) {
+      let id;
+      try {
+        id = decodeURIComponent(href.slice(1));
+      } catch {
+        return;
+      }
+      const target = id.length === 0 ? root : document.getElementById(id);
+      if (
+        target == null ||
+        globalThis.navigator.userActivation?.isActive !== true
+      ) {
+        return;
+      }
+      event.preventDefault();
+      postToHost("scroll-to", {
+        top: target.getBoundingClientRect().top + globalThis.scrollY,
+      });
+      return;
+    }
+    event.preventDefault();
+    openExternal({ href });
+  });
+  new ResizeObserver(sendHeight).observe(document.body);
+  syncTheme();
+})();
+</script>
+<div id="codebase-concepts" class="viz-carousel" aria-label="Codebase explorer directions">
+  <section data-variant="Focus mode" aria-label="Full-screen codebase mode"><div id="explorer-focus" class="cx-product" data-layout="focus"></div></section>
+  <section data-variant="Project workspace" aria-label="Codebase in the project sidebar" hidden><div id="explorer-workspace" class="cx-product" data-layout="workspace"></div></section>
+</div>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;650;700&display=swap');
+#codebase-concepts { width:100%; }
+#codebase-concepts .cx-product {
+  --cx-bg:light-dark(#fcfcfd,#101011);--cx-panel:light-dark(#ffffff,#19191b);--cx-sidebar:light-dark(#f5f5f6,#141416);--cx-raised:light-dark(#f0f1f4,#242427);--cx-fg:light-dark(#242429,#f0f0f3);--cx-muted:light-dark(#666670,#a0a0ab);--cx-line:light-dark(#e1e2e7,#2e2e33);--cx-blue:light-dark(#315bcd,#7c9dff);--cx-blue-bg:light-dark(#eff3ff,#202b47);--cx-green:light-dark(#37725b,#94c9af);--cx-amber:light-dark(#956315,#d4b675);--cx-dot:light-dark(#dfe1e7,#2b2b31);--cx-shadow:light-dark(#2020400a,#00000022);
+  color:var(--cx-fg);background:var(--cx-bg);font:13px/1.5 'DM Sans','Segoe UI',sans-serif;border:1px solid var(--cx-line);border-radius:12px;overflow:hidden;min-height:734px;position:relative;text-align:left;
+}
+#codebase-concepts .cx-product * {box-sizing:border-box;}
+#codebase-concepts .cx-product button,#codebase-concepts .cx-product input {font:inherit;}
+#codebase-concepts .cx-product button {color:inherit;border:0;background:none;cursor:pointer;}
+#codebase-concepts .cx-product button:focus-visible {outline:2px solid var(--cx-blue);outline-offset:3px;}
+#codebase-concepts .cx-product h1,#codebase-concepts .cx-product h2,#codebase-concepts .cx-product h3,#codebase-concepts .cx-product p {margin:0;}
+#codebase-concepts .cx-product svg[data-lucide] {width:16px;height:16px;flex-shrink:0;stroke-width:1.6;}
+#codebase-concepts .cx-top {height:53px;border-bottom:1px solid var(--cx-line);display:flex;align-items:center;padding:0 19px;gap:18px;background:var(--cx-panel);}
+#codebase-concepts .cx-brand {font-weight:700;letter-spacing:-.9px;font-size:19px;white-space:nowrap;}
+#codebase-concepts .cx-brand span {font-size:13px;letter-spacing:-.2px;font-weight:500;color:var(--cx-muted);margin-left:5px;}
+#codebase-concepts .cx-divider {width:1px;height:18px;background:var(--cx-line);}
+#codebase-concepts .cx-project-name {display:flex;gap:8px;align-items:center;font-weight:500;}
+#codebase-concepts .cx-env {font-size:11px;color:var(--cx-muted);display:flex;align-items:center;gap:6px;}
+#codebase-concepts .cx-env::before {content:'';width:5px;height:5px;border-radius:50%;background:var(--cx-green);}
+#codebase-concepts .cx-top-spacer {flex:1;}
+#codebase-concepts .cx-toggle {display:flex;border-radius:7px;background:var(--cx-raised);padding:3px;gap:2px;}
+#codebase-concepts .cx-toggle button {display:flex;gap:7px;align-items:center;padding:5px 10px;border-radius:5px;font-size:12px;color:var(--cx-muted);}
+#codebase-concepts .cx-toggle button[aria-pressed=true] {background:var(--cx-panel);color:var(--cx-fg);box-shadow:0 1px 4px var(--cx-shadow);}
+#codebase-concepts .cx-prototype {font:10px/1.4 'DM Sans',sans-serif;letter-spacing:.1em;color:var(--cx-muted);border:1px solid var(--cx-line);padding:3px 5px;border-radius:3px;}
+#codebase-concepts .cx-app {display:flex;min-height:680px;}
+#codebase-concepts .cx-side {width:174px;flex-shrink:0;background:var(--cx-sidebar);border-right:1px solid var(--cx-line);padding:22px 10px 14px;display:flex;flex-direction:column;gap:4px;}
+#codebase-concepts [data-layout=focus] .cx-side {display:none;}
+#codebase-concepts .cx-side-label {font-size:10px;font-weight:600;letter-spacing:.09em;color:var(--cx-muted);margin:0 9px 9px;}
+#codebase-concepts .cx-nav {display:flex;align-items:center;gap:8px;padding:8px 9px;border-radius:6px;text-align:left;}
+#codebase-concepts .cx-nav[aria-current=page] {background:var(--cx-raised);color:var(--cx-fg);font-weight:600;}
+#codebase-concepts .cx-nav.cx-sub {font-size:12px;color:var(--cx-muted);padding-left:17px;}
+#codebase-concepts .cx-side .cx-tree {border-top:1px solid var(--cx-line);margin-top:20px;padding-top:20px;}
+#codebase-concepts .cx-side-footer {margin-top:auto;color:var(--cx-muted);font-size:11px;padding:20px 9px 0;}
+#codebase-concepts .cx-main {flex:1;min-width:0;}
+#codebase-concepts .cx-heading {min-height:87px;display:flex;gap:12px;align-items:center;justify-content:space-between;padding:17px 23px;border-bottom:1px solid var(--cx-line);}
+#codebase-concepts .cx-heading h1 {font-size:20px;font-weight:600;letter-spacing:-.55px;margin-bottom:3px;}
+#codebase-concepts .cx-heading p {font-size:12px;color:var(--cx-muted);}
+#codebase-concepts .cx-btn {display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:7px 10px;border:1px solid var(--cx-line)!important;border-radius:6px!important;background:var(--cx-panel)!important;font-size:12px!important;white-space:nowrap;}
+#codebase-concepts .cx-btn:hover {background:var(--cx-raised)!important;}
+#codebase-concepts .cx-btn.cx-primary {background:var(--cx-blue-bg)!important;color:var(--cx-blue);border-color:color-mix(in srgb,var(--cx-blue) 35%,var(--cx-line))!important;}
+#codebase-concepts .cx-toolbar {display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 21px;border-bottom:1px solid var(--cx-line);min-height:47px;}
+#codebase-concepts .cx-crumbs {display:flex;align-items:center;gap:5px;flex-wrap:wrap;font-size:12px;}
+#codebase-concepts .cx-crumbs button {padding:2px 3px;color:var(--cx-muted);}
+#codebase-concepts .cx-crumbs button:last-of-type {color:var(--cx-fg);font-weight:500;}
+#codebase-concepts .cx-crumbs .cx-sep {color:var(--cx-muted);opacity:.5;}
+#codebase-concepts .cx-depth {font-size:11px;white-space:nowrap;color:var(--cx-muted);}
+#codebase-concepts .cx-body {display:grid;grid-template-columns:minmax(0,1fr) 260px;min-height:486px;}
+#codebase-concepts .cx-map-area {min-width:0;position:relative;background-image:radial-gradient(var(--cx-dot) .8px,transparent .8px);background-size:18px 18px;}
+#codebase-concepts .cx-map-head {padding:20px 21px 0;display:flex;justify-content:space-between;align-items:center;gap:10px;}
+#codebase-concepts .cx-eyebrow {color:var(--cx-muted);font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;}
+#codebase-concepts .cx-map-head .cx-status {font-size:11px;color:var(--cx-green);display:flex;align-items:center;gap:5px;}
+#codebase-concepts .cx-graph {position:relative;height:410px;margin:7px 15px 0;}
+#codebase-concepts .cx-lines {position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;}
+#codebase-concepts .cx-lines path {fill:none;stroke:var(--cx-muted);stroke-width:1.25;opacity:.4;}
+#codebase-concepts .cx-lines path.active {stroke:var(--cx-blue);opacity:1;stroke-width:1.7;}
+#codebase-concepts .cx-lines path.inferred {stroke-dasharray:4 4;}
+#codebase-concepts .cx-node {position:absolute;background:var(--cx-panel);border:1px solid var(--cx-line);border-radius:8px;box-shadow:0 3px 10px var(--cx-shadow);overflow:hidden;}
+#codebase-concepts .cx-node.selected {border-color:var(--cx-blue);box-shadow:0 0 0 3px color-mix(in srgb,var(--cx-blue) 9%,transparent);}
+#codebase-concepts .cx-node-main {display:block;width:100%;padding:12px!important;text-align:left;}
+#codebase-concepts .cx-node-top {display:flex;align-items:center;gap:7px;margin-bottom:7px;}
+#codebase-concepts .cx-node-top i,#codebase-concepts .cx-node-top svg {color:var(--cx-muted);}
+#codebase-concepts .cx-node.selected .cx-node-top svg {color:var(--cx-blue);}
+#codebase-concepts .cx-node-name {font-size:12px;font-weight:600;letter-spacing:-.1px;}
+#codebase-concepts .cx-node-type {font:10px/1.5 Consolas,monospace;color:var(--cx-muted);margin-bottom:6px;overflow-wrap:anywhere;}
+#codebase-concepts .cx-node-desc {font-size:11px;line-height:1.5;color:var(--cx-muted);}
+#codebase-concepts .cx-node-bottom {display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--cx-line);padding:6px 10px;gap:4px;background:color-mix(in srgb,var(--cx-panel) 90%,var(--cx-raised));}
+#codebase-concepts .cx-node-state {font-size:10px;color:var(--cx-muted);}
+#codebase-concepts .cx-node-open {color:var(--cx-blue)!important;font-size:11px!important;display:flex;align-items:center;gap:3px;padding:0!important;}
+#codebase-concepts .cx-node-open svg {width:12px!important;height:12px!important;}
+#codebase-concepts .cx-edge-label {position:absolute;transform:translate(-50%,-50%);max-width:122px;border:1px solid var(--cx-line)!important;border-radius:4px;background:var(--cx-bg)!important;font-size:10px!important;color:var(--cx-muted)!important;padding:2px 5px!important;line-height:1.4!important;z-index:2;white-space:nowrap;}
+#codebase-concepts .cx-edge-label:hover,#codebase-concepts .cx-edge-label.selected {color:var(--cx-blue)!important;border-color:var(--cx-blue)!important;}
+#codebase-concepts .cx-map-foot {display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--cx-muted);font-size:10px;padding:4px 21px 17px;}
+#codebase-concepts .cx-map-legend {display:flex;gap:12px;}
+#codebase-concepts .cx-map-legend span {display:flex;align-items:center;gap:5px;}
+#codebase-concepts .cx-map-legend b {width:14px;height:1px;background:var(--cx-muted);font-weight:400;}
+#codebase-concepts .cx-map-legend .cx-inferred {height:0;background:none;border-top:1px dashed var(--cx-muted);}
+#codebase-concepts .cx-inspector {border-left:1px solid var(--cx-line);padding:21px 19px;background:var(--cx-panel);min-width:0;}
+#codebase-concepts .cx-inspector-title {display:flex;align-items:center;gap:10px;margin:16px 0 10px;}
+#codebase-concepts .cx-inspector-icon {display:flex;align-items:center;justify-content:center;width:33px;height:33px;border-radius:8px;color:var(--cx-blue);background:var(--cx-blue-bg);flex-shrink:0;}
+#codebase-concepts .cx-inspector h2 {font-size:17px;font-weight:600;letter-spacing:-.35px;}
+#codebase-concepts .cx-inspector .cx-tag {font-size:10px;color:var(--cx-muted);}
+#codebase-concepts .cx-summary {font-size:12px;line-height:1.7;color:var(--cx-muted);margin-bottom:17px!important;}
+#codebase-concepts .cx-stack {display:flex;gap:5px;flex-wrap:wrap;margin-bottom:20px;}
+#codebase-concepts .cx-stack span {font-size:10px;border:1px solid var(--cx-line);padding:2px 6px;border-radius:4px;}
+#codebase-concepts .cx-detail-section {padding:15px 0;border-top:1px solid var(--cx-line);}
+#codebase-concepts .cx-detail-section h3 {font-size:10px;letter-spacing:.08em;text-transform:uppercase;font-weight:600;color:var(--cx-muted);margin-bottom:10px;}
+#codebase-concepts .cx-detail-row {display:flex;gap:7px;align-items:flex-start;margin:7px 0;font-size:11px;}
+#codebase-concepts .cx-detail-row svg {width:13px;height:13px;margin-top:2px;color:var(--cx-muted);}
+#codebase-concepts .cx-source {display:block;width:100%;text-align:left;padding:6px 0!important;font:10px/1.6 Consolas,monospace!important;color:var(--cx-blue)!important;overflow-wrap:anywhere;}
+#codebase-concepts .cx-inspector .cx-btn {width:100%;margin-top:13px;white-space:normal;}
+#codebase-concepts .cx-passbar {border-top:1px solid var(--cx-line);padding:12px 20px;display:flex;align-items:center;gap:12px;background:var(--cx-panel);font-size:11px;min-height:59px;}
+#codebase-concepts .cx-passbar svg {color:var(--cx-muted);}
+#codebase-concepts .cx-pass-copy {flex:1;min-width:0;}
+#codebase-concepts .cx-pass-copy b {font-weight:500;}
+#codebase-concepts .cx-pass-copy p {color:var(--cx-muted);font-size:10px;margin-top:1px;}
+#codebase-concepts .cx-pass-count {color:var(--cx-muted);font:10px Consolas,monospace;}
+#codebase-concepts .cx-context {position:absolute;z-index:20;width:190px;background:var(--cx-panel);border:1px solid var(--cx-line);padding:5px;border-radius:7px;box-shadow:0 7px 30px #0003;}
+#codebase-concepts .cx-context button {display:flex;align-items:center;gap:8px;width:100%;padding:8px;border-radius:4px;text-align:left;font-size:12px;}
+#codebase-concepts .cx-context button:hover {background:var(--cx-raised);}
+#codebase-concepts .cx-overlay {position:absolute;inset:53px 0 0;background:color-mix(in srgb,var(--cx-bg) 78%,transparent);z-index:25;display:flex;align-items:flex-start;justify-content:center;padding:50px 20px;backdrop-filter:blur(4px);}
+#codebase-concepts .cx-modal {width:500px;max-width:100%;padding:24px;background:var(--cx-panel);border:1px solid var(--cx-line);border-radius:12px;box-shadow:0 15px 80px #0003;}
+#codebase-concepts .cx-modal-head {display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;}
+#codebase-concepts .cx-modal-head h2 {font-size:18px;font-weight:600;}
+#codebase-concepts .cx-modal p {font-size:12px;color:var(--cx-muted);margin-bottom:18px;}
+#codebase-concepts .cx-pass-item {display:flex;gap:12px;padding:14px 0;border-top:1px solid var(--cx-line);}
+#codebase-concepts .cx-pass-num {width:25px;height:25px;display:flex;align-items:center;justify-content:center;border:1px solid var(--cx-line);border-radius:50%;font:11px Consolas,monospace;color:var(--cx-muted);flex-shrink:0;}
+#codebase-concepts .cx-pass-item strong {font-size:12px;font-weight:500;}
+#codebase-concepts .cx-pass-item p {font-size:11px;margin:3px 0 0;}
+#codebase-concepts .cx-modal pre {padding:15px;background:var(--cx-bg);border:1px solid var(--cx-line);border-radius:6px;font:11px/1.8 Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--cx-muted);}
+#codebase-concepts .cx-notice {font-size:11px;padding:10px 13px;background:var(--cx-blue-bg);color:var(--cx-blue);border-radius:6px;}
+#codebase-concepts .cx-chat {min-height:680px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;gap:18px;}
+#codebase-concepts .cx-chat h2 {font-size:24px;font-weight:500;letter-spacing:-.6px;}
+#codebase-concepts .cx-chat p {font-size:13px;color:var(--cx-muted);text-align:center;max-width:400px;}
+#codebase-concepts .cx-chat-sample {padding:18px;background:var(--cx-panel);border:1px solid var(--cx-line);border-radius:10px;width:100%;max-width:510px;color:var(--cx-muted);font-size:13px;}
+#codebase-concepts .cx-sr {position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+@media(min-width:1400px){#codebase-concepts .cx-body{grid-template-columns:minmax(0,1fr) 292px;}#codebase-concepts .cx-inspector{padding:23px;}#codebase-concepts .cx-graph{height:435px;}#codebase-concepts .cx-node-name{font-size:13px;}#codebase-concepts .cx-node-desc{font-size:12px;}}
+@media(max-width:1080px){#codebase-concepts .cx-side{width:148px;}#codebase-concepts .cx-body{grid-template-columns:minmax(0,1fr) 235px;}#codebase-concepts .cx-inspector{padding:18px 15px;}#codebase-concepts .cx-node-main{padding:10px!important;}#codebase-concepts .cx-heading{padding:17px;}#codebase-concepts .cx-prototype{display:none;}}
+@media(max-width:900px){#codebase-concepts .cx-side{display:none;}#codebase-concepts .cx-body{grid-template-columns:minmax(0,1fr) 240px;}}
+@media(max-width:740px){#codebase-concepts .cx-body{grid-template-columns:1fr;}#codebase-concepts .cx-inspector{border-left:0;border-top:1px solid var(--cx-line);}#codebase-concepts .cx-top{padding:0 12px;gap:10px;}#codebase-concepts .cx-env,#codebase-concepts .cx-divider{display:none;}#codebase-concepts .cx-inspector .cx-btn{width:auto;}#codebase-concepts .cx-inspector-title{margin-top:8px;}#codebase-concepts .cx-detail-section{padding:11px 0;}#codebase-concepts .cx-product{min-height:1190px;}}
+@media(max-width:450px){#codebase-concepts .cx-brand{font-size:16px;}#codebase-concepts .cx-brand span{display:none;}#codebase-concepts .cx-toggle button{padding:5px 7px;}#codebase-concepts .cx-heading{align-items:flex-start;flex-wrap:wrap;}#codebase-concepts .cx-toolbar{padding:10px 14px;}#codebase-concepts .cx-map-head{padding:16px 14px 0;}#codebase-concepts .cx-map-foot{flex-wrap:wrap;padding:14px;}#codebase-concepts .cx-passbar{padding:12px;gap:8px;flex-wrap:wrap;}#codebase-concepts .cx-pass-count{display:none;}#codebase-concepts .cx-product{min-height:1760px;}#codebase-concepts .cx-overlay{padding:20px 10px;}#codebase-concepts .cx-modal{padding:18px;}}
+</style>
+<script>
+(() => {
+  const root = document.getElementById('codebase-concepts');
+  const icon = name => `<i data-lucide="${name}" aria-hidden="true"></i>`;
+  const esc = value => String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const node = (id,name,type,desc,iconName,col,row,extra={}) => ({id,name,type,desc,icon:iconName,col,row,...extra});
+  const scenes = {
+    app:{title:'The whole application',eyebrow:'Architecture',crumbs:['T3 Code'],depth:1,selected:'web',scope:'App overview',
+      nodes:[
+        node('web','Web frontend','apps/web','The interface for working with agents.','panels-top-left',0,0,{child:'frontend',state:'Routes ready',stack:['React','Vite','TanStack Router'],summary:'Where you start threads, send messages, and follow an agent’s work. The web client renders server state and sends actions over a typed connection.',contains:['Chat, drafts, and settings routes','Timeline, composer, and workspace panels','Shared environment and thread state'],sources:['apps/web/src/routes/_chat.tsx','apps/web/src/components/ChatView.tsx']}),
+        node('desktop','Desktop shell','apps/desktop','The web app, with native capabilities.','monitor',0,1,{state:'Overview only',stack:['Electron','React'],summary:'Packages the web interface with a local server runner and desktop integrations. It can also host connections from other devices.'}),
+        node('mobile','Mobile client','apps/mobile','Work with your agents on the go.','smartphone',0,2,{state:'Overview only',stack:['React Native','iOS','Android'],summary:'A separate native client that connects to a T3 environment. It shares client runtime logic with the web app.'}),
+        node('server','T3 server','apps/server','Turns client actions into durable state.','server',1,1,{child:'server',state:'Expand on demand',stack:['Node.js','WebSocket','Effect'],summary:'Owns projects, threads, provider sessions, and persisted events. It validates client requests and streams updated state back to connected clients.',contains:['Typed WebSocket requests','Commands, events, and projections','Provider and checkpoint reactors'],sources:['apps/server/src/ws.ts','docs/internals/glossary.md']}),
+        node('providers','Agent providers','Provider adapters','Runs the agents you subscribe to.','terminal',2,0,{state:'Overview only',stack:['Codex','Claude','Cursor','Grok','OpenCode'],summary:'Adapters translate each provider’s native protocol into a common event model so the clients can present a consistent thread.'}),
+        node('storage','Persistent state','Environment storage','Remembers threads and checkpoints.','database',2,2,{state:'Overview only',stack:['SQLite','Git refs'],summary:'Domain events and projections preserve thread history. Hidden Git refs capture checkpoints so a turn can be inspected and restored.'})
+      ],edges:[['web','server','Typed requests','Client actions cross the environment boundary through typed WebSocket requests. Updated state travels back to the client.'],['desktop','server','Local server','The desktop host bundles a server runner. Remote clients can connect to the hosted environment.'],['mobile','server','Remote connection','The native client connects to a selected T3 environment.'],['server','providers','Native protocol','Each provider adapter starts or resumes its provider CLI and translates runtime messages.'],['server','storage','Persist events','Events are persisted and projected into client-facing state. Checkpoints use Git refs.']]},
+    frontend:{title:'Inside the frontend',eyebrow:'Routes & components',crumbs:['T3 Code','Web frontend'],depth:2,selected:'chat',scope:'Web frontend',
+      nodes:[
+        node('routes','Chat routes','routes/_chat.*','Connect URLs to the active thread.','route',0,0,{state:'Mapped',stack:['TanStack Router'],summary:'Route boundaries choose the draft, thread, and environment shown in the workspace.',sources:['apps/web/src/routes/_chat.tsx','apps/web/src/routes/_chat.$environmentId.$threadId.tsx']}),
+        node('settings','Settings routes','routes/settings.*','Manage providers and preferences.','settings-2',0,2,{state:'Mapped',summary:'Settings has separate pages for appearance, providers, connections, keybindings, and other preferences.'}),
+        node('chat','ChatView','components/ChatView.tsx','Brings a thread’s workspace together.','panels-top-left',1,0,{child:'chat',state:'Components ready',stack:['React','Shared client runtime'],summary:'The main workspace for a thread. It brings together the conversation, message composer, and work panels, all scoped to the active environment and thread.',contains:['Conversation timeline and composer','Header and project actions','Terminal, changes, and browser panels'],sources:['apps/web/src/components/ChatView.tsx','apps/web/src/components/chat/ChatHeader.tsx']}),
+        node('settingsshell','Settings shell','routes/settings.tsx','A shared layout for preference pages.','sliders-horizontal',1,2,{state:'Mapped',summary:'Provides navigation and page layout for the settings routes.'}),
+        node('state','Client state','packages/client-runtime','Keeps environment data consistent.','layers',2,0,{state:'Mapped',stack:['Effect atoms','WebSocket'],summary:'Shared client logic scopes data and operations to the right environment. Web and mobile consume this common layer.'}),
+        node('ui','UI primitives','components/ui','Shared controls and interaction patterns.','component',2,2,{state:'Overview only',summary:'Reusable controls provide the app’s consistent navigation, menus, dialogs, and form interactions.'})
+      ],edges:[['routes','chat','Renders','The selected route resolves the active thread and renders its workspace.'],['settings','settingsshell','Renders','Settings routes compose their content inside the shared settings layout.'],['chat','state','Reads / dispatches','The thread workspace reads scoped state and dispatches user actions.'],['settingsshell','ui','Composes','The settings shell uses shared UI controls.'],['chat','ui','Composes','Shared components provide consistent controls in the chat workspace.']]},
+    chat:{title:'Inside ChatView',eyebrow:'Components & behavior',crumbs:['T3 Code','Web frontend','ChatView'],depth:3,selected:'actions',scope:'ChatView',
+      nodes:[
+        node('header','ChatHeader','chat/ChatHeader.tsx','Project identity and workspace actions.','panel-top',0,0,{state:'Mapped',summary:'Shows the active project and thread with project scripts, editor, and Git actions.'}),
+        node('timeline','Conversation','Thread timeline','Messages, tool activity, and outcomes.','messages-square',0,2,{state:'Mapped',summary:'Presents the durable history of a thread, including messages and agent activity.'}),
+        node('composer','Composer','Message input','Prepares the next turn for an agent.','text-cursor-input',1,0,{state:'Mapped',summary:'Collects the user’s message and turn options before submitting work to the active provider.'}),
+        node('actions','useThreadActions','hooks/useThreadActions.ts','Changes a thread’s lifecycle.','workflow',1,2,{child:'functions',state:'Functions on demand',stack:['React hook','Scoped thread operations'],summary:'Coordinates actions such as archiving, deleting, snoozing, and restoring a thread, including the navigation and UI cleanup those actions require.',contains:['archiveThread(target, options)','deleteThread(target, options)','snoozeThread(target, snoozedUntil)'],sources:['apps/web/src/hooks/useThreadActions.ts']}),
+        node('threadstate','Thread state','Environment-scoped state','The current thread and connection.','layers',2,0,{state:'Mapped',summary:'Resolves state against an environment and thread so operations reach the intended server.'}),
+        node('panels','Work panels','Terminal · browser · changes','Keeps working context beside the chat.','panel-right',2,2,{state:'Overview only',summary:'Auxiliary workspace panels expose terminal sessions, browser previews, and code changes.'})
+      ],edges:[['header','composer','Workspace context','Project and thread context determines the available workspace actions.','inferred'],['composer','threadstate','Submits a turn','A user submission dispatches a request in the active environment.'],['timeline','actions','Thread actions','Thread lifecycle controls invoke the shared action behavior.','inferred'],['actions','threadstate','Scoped mutations','Actions resolve the target environment before dispatching their mutation.'],['threadstate','panels','Shared context','Workspace panels follow the active thread and environment.','inferred']]},
+    functions:{title:'Inside useThreadActions',eyebrow:'Functions & side effects',crumbs:['T3 Code','Web frontend','ChatView','useThreadActions'],depth:4,selected:'archive',scope:'useThreadActions',
+      nodes:[
+        node('archive','archiveThread()','Async action','Archives a thread and updates selection.','braces',0,0,{state:'Mapped',stack:['ScopedThreadRef','Promise'],summary:'Resolves the target thread, dispatches the archive mutation, and coordinates navigation when the archived thread was active.',contains:['Input: environment + thread reference','Effect: archive mutation','UI: resolve the next active thread'],sources:['apps/web/src/hooks/useThreadActions.ts:158']}),
+        node('delete','deleteThread()','Async action','Deletes a thread and cleans up its UI.','braces',0,2,{state:'Mapped',summary:'Coordinates thread deletion with related client state and navigation cleanup.',sources:['apps/web/src/hooks/useThreadActions.ts:217']}),
+        node('scope','Resolve target','Environment + thread','Selects the correct environment.','scan',1,1,{state:'Mapped',summary:'Looks up the thread and retains its environment-scoped reference for the action.'}),
+        node('mutation','Dispatch mutation','Client → server','Requests the persisted state change.','arrow-right-left',2,0,{state:'Mapped',summary:'Dispatches a typed operation through the target environment connection.'}),
+        node('selection','Update selection','Client navigation','Keeps a valid thread on screen.','mouse-pointer-2',2,2,{state:'Mapped',summary:'Coordinates client selection after the operation so the workspace remains on a valid thread.'})
+      ],edges:[['archive','scope','Resolve','The action first resolves its target thread and scoped reference.'],['delete','scope','Resolve','Deletion also resolves the target environment and thread.'],['scope','mutation','Dispatch','The scoped mutation requests a persisted change.'],['mutation','selection','After result','Navigation follows the operation result.']]},
+    server:{title:'Inside the server',eyebrow:'Commands, events & side effects',crumbs:['T3 Code','T3 server'],depth:2,selected:'engine',scope:'T3 server',
+      nodes:[
+        node('ws','WebSocket API','ws.ts','Accepts typed client requests.','radio',0,0,{state:'Mapped',summary:'Authenticates and routes client requests to the appropriate environment service.'}),
+        node('ingestion','Provider ingestion','Runtime events','Normalizes provider activity.','terminal',0,2,{state:'Mapped',summary:'Translates runtime activity from provider adapters into orchestration updates.'}),
+        node('engine','Orchestration','Engine + decider','Turns commands into domain events.','workflow',1,1,{state:'Mapped',stack:['Effect','Event sourcing'],summary:'Coordinates command processing. The pure decider determines which events follow a command; persisted events become the durable record.',contains:['Validate the command','Decide and persist events','Coordinate projections and reactors'],sources:['docs/internals/glossary.md']}),
+        node('projection','Projection','Client read model','Builds the state clients render.','layers',2,0,{state:'Mapped',summary:'Projects events into a read model that can be delivered to connected clients.'}),
+        node('reactors','Reactors','Queued effects','Runs providers and checkpoints.','list-checks',2,2,{state:'Mapped',summary:'Queue-backed workers perform side effects and emit receipts when milestones complete.'})
+      ],edges:[['ws','engine','Commands','Typed client requests become domain commands.'],['ingestion','engine','Runtime updates','Provider activity is ingested into the durable orchestration model.'],['engine','projection','Events','Persisted events update the client read model.'],['engine','reactors','Effects','Reactors coordinate the side effects that follow domain events.']]}
+  };
+  const states = [];
+  const restore = globalThis.openai?.widgetState?.privateContent || {};
+  function initialize(el,index) {
+    const saved = restore[index] || {};
+    const state={el,index,scene:scenes[saved.scene]?saved.scene:'app',selected:saved.selected||'web',edge:null,view:'map',mapped:new Set(saved.mapped||['app','frontend','chat']),labels:true,summaries:true};
+    states.push(state);
+    el.innerHTML=`<header class="cx-top"><div class="cx-brand">T3<span>Code</span></div><span class="cx-divider"></span><span class="cx-project-name">${icon('folder-git-2')} t3code</span><span class="cx-env">Local environment</span><div class="cx-top-spacer"></div>${index===0?`<div class="cx-toggle" aria-label="Workspace mode"><button data-action="chat" aria-pressed="false">${icon('messages-square')} Chat</button><button data-action="map" aria-pressed="true">${icon('network')} Codebase</button></div>`:`<span class="cx-depth">Project workspace</span>`}<span class="cx-prototype">UI CONCEPT</span></header><div class="cx-app"><aside class="cx-side"><div class="cx-side-label">PROJECT</div><button class="cx-nav" data-action="chat">${icon('messages-square')} Threads</button><button class="cx-nav" data-action="map" aria-current="page">${icon('network')} Codebase</button><div class="cx-tree"><div class="cx-side-label">EXPLORE</div><button class="cx-nav cx-sub" data-scene="app">${icon('box')} Whole app</button><button class="cx-nav cx-sub" data-scene="frontend">${icon('panels-top-left')} Web frontend</button><button class="cx-nav cx-sub" data-scene="server">${icon('server')} T3 server</button></div><div class="cx-side-footer">t3code<br>Local environment</div></aside><main class="cx-main"></main></div><div class="cx-sr" aria-live="polite"></div>`;
+    el.addEventListener('click',e=>click(state,e));
+    el.addEventListener('dblclick',e=>{const card=e.target.closest('[data-node]');if(card)drill(state,card.dataset.node);});
+    el.addEventListener('contextmenu',e=>{const card=e.target.closest('[data-node]');if(!card)return;e.preventDefault();select(state,card.dataset.node);context(state,e);});
+    el.addEventListener('keydown',e=>{if(e.key==='Escape'){const overlay=el.querySelector('.cx-overlay,.cx-context');if(overlay){overlay.remove();el.querySelector('[data-action=passes]')?.focus();}else if(state.scene!=='app'){navigate(state,parent(state.scene));}}});
+    render(state);
+    if(globalThis.Tweak){const tweak=new Tweak({container:el,onChange:()=>render(state)});tweak.addToggle(state,'labels',{label:'Connection labels'});tweak.addToggle(state,'summaries',{label:'Descriptions on nodes'});}
+  }
+  function save(){if(!globalThis.openai?.setWidgetState)return;const privateContent={};states.forEach(s=>privateContent[s.index]={scene:s.scene,selected:s.selected,mapped:[...s.mapped]});Promise.resolve(globalThis.openai.setWidgetState({modelContent:{concepts:states.map(s=>({placement:s.index?'Project workspace':'Focus mode',scope:scenes[s.scene].scope}))},privateContent})).catch(()=>{});}
+  function hydrate(){globalThis.lucide?.createIcons({attrs:{width:16,height:16}});}
+  function parent(scene){return {frontend:'app',server:'app',chat:'frontend',functions:'chat'}[scene]||'app';}
+  function navigate(s,id){if(!scenes[id])return;if(!s.mapped.has(id)){modal(s,`Explore ${scenes[id].scope}`,`<p>Build the next layer for this scope. Existing maps stay available.</p><div class="cx-pass-item"><span class="cx-pass-num">${scenes[id].depth}</span><div><strong>${scenes[id].eyebrow}</strong><p>Map responsibilities, dependencies, and source references.</p></div></div><div class="cx-notice">Preview state. This mockup uses sample results and does not run an agent.</div><button class="cx-btn cx-primary" style="margin-top:18px" data-generate="${id}">Build this layer ${icon('arrow-right')}</button>`);return;}s.scene=id;s.selected=scenes[id].selected;s.edge=null;s.view='map';render(s);save();}
+  function render(s){
+    const scene=scenes[s.scene];
+    s.el.querySelectorAll('[data-action=chat]').forEach(b=>{b.setAttribute('aria-pressed',String(s.view==='chat'));b.removeAttribute('aria-current');});
+    s.el.querySelectorAll('[data-action=map]').forEach(b=>{b.setAttribute('aria-pressed',String(s.view==='map'));if(s.view==='map')b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});
+    const main=s.el.querySelector('.cx-main');
+    if(s.view==='chat'){main.innerHTML=`<div class="cx-chat"><span class="cx-eyebrow">Back in your thread</span><h2>Exploring the codebase</h2><p>Your conversation stays here. The codebase map keeps its current location when you switch back.</p><div class="cx-chat-sample">I want to understand how the frontend talks to the backend.</div><button class="cx-btn cx-primary" data-action="map">${icon('network')} Return to codebase</button></div>`;hydrate();return;}
+    const chain=[];let cur=s.scene;while(cur){chain.unshift(cur);cur=cur==='app'?null:parent(cur);}
+    main.innerHTML=`<div class="cx-heading"><div><h1>Codebase</h1><p>${s.index?'A shared map of your project.':'Understand the app, one layer at a time.'}</p></div><button class="cx-btn" data-action="passes">${icon('layers')} Analysis passes</button></div><div class="cx-toolbar"><nav class="cx-crumbs" aria-label="Codebase location">${chain.map((id,i)=>`${i?'<span class="cx-sep">/</span>':''}<button data-scene="${id}">${esc(scenes[id].crumbs.at(-1))}</button>`).join('')}</nav><span class="cx-depth">Layer ${scene.depth} <span style="opacity:.5">/</span> ${scene.depth===1?'System':scene.depth===2?'Structure':scene.depth===3?'Behavior':'Functions'}</span></div><div class="cx-body"><div class="cx-map-area"><div class="cx-map-head"><span class="cx-eyebrow">${scene.eyebrow}</span><span class="cx-status">${icon('check')} ${s.mapped.has(s.scene)?'Mapped':'Overview ready'}</span></div><div class="cx-graph" aria-label="${scene.title}"></div><div class="cx-map-foot"><div class="cx-map-legend"><span><b></b> In code</span><span><b class="cx-inferred"></b> Inferred</span></div><span>Double-click to explore · Right-click for actions</span></div></div><aside class="cx-inspector" aria-label="Selected item details"></aside></div><footer class="cx-passbar">${icon('scan-line')}<div class="cx-pass-copy"><b>${s.scene==='app'?'App overview mapped':esc(scene.scope)+' mapped'}</b><p>${s.scene==='app'?'Deeper layers are built only when you explore them.':'Other scopes keep their existing maps.'}</p></div><span class="cx-pass-count">${s.mapped.size} scopes</span><button class="cx-btn" data-action="passes">View passes ${icon('arrow-up-right')}</button></footer>`;
+    draw(s);inspect(s);hydrate();
+    s.observer?.disconnect();s.observer=new ResizeObserver(()=>{if(s.view==='map')draw(s);});s.observer.observe(main.querySelector('.cx-graph'));
+    s.el.querySelector('.cx-sr').textContent=`${scene.title}. Layer ${scene.depth}.`;
+  }
+  function draw(s){
+    const graph=s.el.querySelector('.cx-graph');if(!graph)return;
+    const scene=scenes[s.scene],width=graph.clientWidth;if(width===0)return;
+    const narrow=width<430,nodeWidth=narrow?width:Math.min(190,(width-50)/3),gap=narrow?0:(width-nodeWidth*3)/2;
+    const step=s.summaries?182:136;
+    const positions=new Map();let height=step*2+168;
+    if(narrow)height=scene.nodes.length*158+7;
+    graph.style.height=`${height}px`;
+    scene.nodes.forEach((n,i)=>positions.set(n.id,{x:narrow?0:n.col*(nodeWidth+gap),y:narrow?i*158+6:12+n.row*step,w:nodeWidth,h:s.summaries?139:101}));
+    graph.innerHTML=`<svg class="cx-lines" aria-hidden="true" viewBox="0 0 ${width} ${height}"><defs><marker id="cx-arrow-${s.index}" markerWidth="6" markerHeight="6" refX="4.5" refY="3" orient="auto"><path d="M0,0 L5,3 L0,6" style="stroke:var(--cx-muted);fill:none;opacity:.7"></path></marker></defs></svg>`;
+    const svg=graph.querySelector('svg');
+    if(!narrow)scene.edges.forEach((edge,i)=>{const a=positions.get(edge[0]),b=positions.get(edge[1]);const x1=a.x+a.w,y1=a.y+a.h/2,x2=b.x,y2=b.y+b.h/2;const middle=(x1+x2)/2;let d=`M${x1},${y1} C${middle},${y1} ${middle},${y2} ${x2},${y2}`;
+      if(a.x===b.x){d=`M${a.x+a.w},${y1} C${a.x+a.w+25},${y1} ${b.x+b.w+25},${y2} ${b.x+b.w},${y2}`;}
+      const path=document.createElementNS('http://www.w3.org/2000/svg','path');path.dataset.edgePath=String(i);path.setAttribute('d',d);path.setAttribute('marker-end',`url(#cx-arrow-${s.index})`);path.setAttribute('class',`${s.edge===i||edge[0]===s.selected||edge[1]===s.selected?'active':''} ${edge[4]==='inferred'?'inferred':''}`);svg.appendChild(path);
+      if(s.labels&&gap>48&&a.x!==b.x){const label=document.createElement('button');label.className='cx-edge-label'+(s.edge===i?' selected':'');label.dataset.edge=String(i);label.style.left=middle+'px';label.style.top=(y1+y2)/2+'px';label.textContent=edge[2];label.setAttribute('aria-label',`${edge[2]}: ${edge[0]} to ${edge[1]}`);graph.appendChild(label);}
+    });
+    scene.nodes.forEach(n=>{const p=positions.get(n.id),card=document.createElement('article');card.className='cx-node'+(s.selected===n.id&&s.edge===null?' selected':'');card.dataset.node=n.id;card.style.cssText=`left:${p.x}px;top:${p.y}px;width:${p.w}px;`;card.innerHTML=`<button class="cx-node-main" data-select="${n.id}" aria-label="Inspect ${esc(n.name)}" aria-pressed="${s.selected===n.id&&s.edge===null}"><div class="cx-node-top">${icon(n.icon)}<span class="cx-node-name">${esc(n.name)}</span></div><div class="cx-node-type">${esc(n.type)}</div>${s.summaries?`<div class="cx-node-desc">${esc(n.desc)}</div>`:''}</button><div class="cx-node-bottom"><span class="cx-node-state">${n.state}</span>${n.child?`<button class="cx-node-open" data-open="${n.id}">Explore ${icon('chevron-right')}</button>`:`<span style="color:var(--cx-muted);font-size:10px">${s.scene==='functions'?'ƒ':'·'}</span>`}</div>`;graph.appendChild(card);});
+    hydrate();
+  }
+  function inspect(s){const scene=scenes[s.scene],panel=s.el.querySelector('.cx-inspector');if(!panel)return;
+    if(s.edge!==null){const edge=scene.edges[s.edge],from=scene.nodes.find(n=>n.id===edge[0]),to=scene.nodes.find(n=>n.id===edge[1]);panel.innerHTML=`<span class="cx-eyebrow">Connection</span><div class="cx-inspector-title"><span class="cx-inspector-icon">${icon('arrow-right-left')}</span><h2>${edge[2]}</h2></div><p class="cx-summary">${edge[3]}</p><div class="cx-detail-section"><h3>Direction</h3><button class="cx-source" data-select="${from.id}">${from.name}</button><span style="color:var(--cx-muted)">↓</span><button class="cx-source" data-select="${to.id}">${to.name}</button></div><div class="cx-detail-section"><h3>Evidence</h3><p class="cx-summary">${edge[4]==='inferred'?'Inferred relationship. Review the source before treating this as a direct dependency.':'Representative relationship based on the project structure. Source evidence would appear here in the finished feature.'}</p><span class="cx-tag">Illustrative map · Not a completed code analysis</span></div>`;hydrate();return;}
+    const n=scene.nodes.find(n=>n.id===s.selected)||scene.nodes[0];s.selected=n.id;
+    const connections=scene.edges.map((e,i)=>({e,i})).filter(({e})=>e[0]===n.id||e[1]===n.id);
+    panel.innerHTML=`<span class="cx-eyebrow">${s.scene==='functions'?'Function details':'Selected '+(s.scene==='app'?'system':'component')}</span><div class="cx-inspector-title"><span class="cx-inspector-icon">${icon(n.icon)}</span><div><h2>${esc(n.name)}</h2><span class="cx-tag">${esc(n.type)}</span></div></div><p class="cx-summary">${esc(n.summary||n.desc)}</p>${n.stack?`<div class="cx-stack">${n.stack.map(x=>`<span>${esc(x)}</span>`).join('')}</div>`:''}${n.contains?`<div class="cx-detail-section"><h3>${s.scene==='functions'?'Inputs & effects':'What’s inside'}</h3>${n.contains.map(x=>`<div class="cx-detail-row">${icon('corner-down-right')}<span>${esc(x)}</span></div>`).join('')}</div>`:''}<div class="cx-detail-section"><h3>Connections</h3>${connections.map(({e,i})=>`<button class="cx-source" data-edge="${i}" style="font-family:inherit!important">${esc(e[2])} ${e[0]===n.id?'→':'←'} ${esc(scene.nodes.find(x=>x.id===(e[0]===n.id?e[1]:e[0])).name)}</button>`).join('')}</div>${n.sources?`<div class="cx-detail-section"><h3>Source references</h3>${n.sources.map(x=>`<button class="cx-source" data-source="${esc(x)}">${esc(x)} ↗</button>`).join('')}</div>`:''}${n.child?`<button class="cx-btn cx-primary" data-open="${n.id}">${icon('scan')} Explore ${esc(n.name)} ${icon('arrow-right')}</button>`:`<span class="cx-tag">${n.state==='Overview only'?'Deeper analysis has not run for this scope.':'Illustrative map · UI concept'}</span>`}`;hydrate();
+  }
+  function select(s,id){s.selected=id;s.edge=null;s.el.querySelectorAll('[data-node]').forEach(el=>{const active=el.dataset.node===id;el.classList.toggle('selected',active);el.querySelector('[data-select]')?.setAttribute('aria-pressed',String(active));});s.el.querySelectorAll('[data-edge-path]').forEach(el=>{const edge=scenes[s.scene].edges[Number(el.dataset.edgePath)];el.classList.toggle('active',edge[0]===id||edge[1]===id);});s.el.querySelectorAll('.cx-edge-label').forEach(el=>el.classList.remove('selected'));inspect(s);save();}
+  function drill(s,id){const n=scenes[s.scene].nodes.find(n=>n.id===id);if(!n?.child){select(s,id);return;}if(s.mapped.has(n.child)){navigate(s,n.child);return;}modal(s,`Explore ${n.name}`,`<p>Build the next layer for <strong>${n.name}</strong>. The rest of the map stays as it is.</p><div class="cx-pass-item"><span class="cx-pass-num">${scenes[n.child].depth}</span><div><strong>${scenes[n.child].eyebrow}</strong><p>Summarize each item, connect its dependencies, and attach source references.</p></div></div><div class="cx-notice">Preview state. This mockup uses sample results and does not run an agent.</div><button class="cx-btn cx-primary" style="margin-top:18px" data-generate="${n.child}">Build this layer ${icon('arrow-right')}</button>`);}
+  function modal(s,title,body){s.el.querySelector('.cx-overlay')?.remove();const overlay=document.createElement('div');overlay.className='cx-overlay';overlay.innerHTML=`<section class="cx-modal" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="cx-modal-head"><h2>${esc(title)}</h2><button data-action="close" aria-label="Close dialog">${icon('x')}</button></div>${body}</section>`;s.el.appendChild(overlay);hydrate();overlay.querySelector('button')?.focus();}
+  function passes(s){modal(s,'Build understanding in passes',`<p>Map the app first. Expand a selected scope when you need more detail.</p>${[['1','System overview','Clients, server, providers, storage.','Ready'],['2','Routes & modules','Entry points and major building blocks.','Web frontend ready'],['3','Components & behavior','Responsibilities and local dependencies.','ChatView ready'],['4','Functions & side effects','Inputs, outputs, callers, and effects.',s.mapped.has('functions')?'useThreadActions ready':'Not yet built']].map(([num,title,desc,status])=>`<div class="cx-pass-item"><span class="cx-pass-num">${num}</span><div><strong>${title}</strong><p>${desc}</p><p style="color:var(--cx-blue)">${status}</p></div></div>`).join('')}<div class="cx-notice">Sample coverage for this concept. Unexplored scopes remain visible as “Overview only”.</div>`);}
+  function context(s,event){s.el.querySelector('.cx-context')?.remove();const bounds=s.el.getBoundingClientRect(),menu=document.createElement('div');menu.className='cx-context';menu.style.left=Math.min(Math.max(8,event.clientX-bounds.left),bounds.width-205)+'px';menu.style.top=Math.min(event.clientY-bounds.top,bounds.height-130)+'px';const n=scenes[s.scene].nodes.find(n=>n.id===s.selected);menu.innerHTML=`${n?.child?`<button data-open="${s.selected}">${icon('scan')} Explore next layer</button>`:''}<button data-action="inspect">${icon('info')} Inspect details</button><button data-action="connections">${icon('arrow-right-left')} Show connections</button>`;s.el.appendChild(menu);hydrate();menu.querySelector('button').focus();}
+  function click(s,event){const b=event.target.closest('button');if(!b)return;s.el.querySelector('.cx-context')?.remove();if(b.dataset.scene){navigate(s,b.dataset.scene);return;}if(b.dataset.select){select(s,b.dataset.select);return;}if(b.dataset.open){drill(s,b.dataset.open);return;}if(b.dataset.edge!==undefined){s.edge=Number(b.dataset.edge);draw(s);inspect(s);return;}if(b.dataset.generate){s.mapped.add(b.dataset.generate);s.el.querySelector('.cx-overlay')?.remove();navigate(s,b.dataset.generate);return;}if(b.dataset.source){modal(s,'Source reference',`<p>${esc(b.dataset.source)}</p><pre>${s.scene==='functions'?'archiveThread(target, options)\n  → resolve the environment and thread\n  → dispatch the archive mutation\n  → coordinate the next selected thread':'Selected scope\n  '+esc(scenes[s.scene].scope)+'\n\nReference\n  '+esc(b.dataset.source)}</pre><div class="cx-notice">Reference preview. In the feature, this opens the file at its source location.</div>`);return;}
+    const action=b.dataset.action;if(action==='passes')passes(s);if(action==='close'){s.el.querySelector('.cx-overlay')?.remove();s.el.querySelector('[data-action=passes]')?.focus();}if(action==='chat'||action==='map'){s.view=action;render(s);}if(action==='inspect')inspect(s);if(action==='connections'){const i=scenes[s.scene].edges.findIndex(e=>e[0]===s.selected||e[1]===s.selected);if(i>=0){s.edge=i;draw(s);inspect(s);}}
+  }
+  root.querySelectorAll('.cx-product').forEach(initialize);
+  window.addEventListener('openai:set_globals',event=>{const next=event.detail?.globals?.widgetState?.privateContent;if(!next)return;states.forEach((s,i)=>{if(scenes[next[i]?.scene]){s.scene=next[i].scene;s.selected=next[i].selected;s.mapped=new Set(next[i].mapped||['app']);render(s);}});});
+})();
+</script>
+
+<script src="https://unpkg.com/@floating-ui/core@1.7.3/dist/floating-ui.core.umd.min.js"></script>
+<script src="https://unpkg.com/@floating-ui/dom@1.7.4/dist/floating-ui.dom.umd.min.js"></script>
+<script>
+(() => {
+  if (window.FloatingUIDOM == null) {
+    return;
+  }
+  const { autoUpdate, computePosition, flip, offset, shift, size } =
+    window.FloatingUIDOM;
+  const tooltipPlacements = new Set(["top", "right", "bottom", "left"]);
+  const tooltipId = `codex-visualization-tooltip-${
+    window.crypto?.randomUUID?.() ?? Date.now().toString(36)
+  }`;
+  const tooltipGap = 5;
+  const hoverDelay = 700;
+  const skipDelay = 300;
+  let activeTrigger = null;
+  let pendingTrigger = null;
+  let tooltip = null;
+  let openTimeout = null;
+  let autoUpdateCleanup = null;
+  let positionRequest = 0;
+  let skipDelayUntil = 0;
+  let lastPointerWasTouch = false;
+  let pinnedByTouch = false;
+
+  const getTrigger = (event) => {
+    for (const target of event.composedPath()) {
+      if (target?.nodeType === Node.ELEMENT_NODE) {
+        const trigger = target.closest("[data-tooltip]");
+        if (trigger) return trigger;
+      }
+    }
+    return null;
+  };
+  const containsTarget = (trigger, target) =>
+    target?.nodeType != null && trigger.contains(target);
+  const getContent = (trigger) =>
+    trigger.getAttribute("data-tooltip")?.trim() ?? "";
+  const getPlacement = (trigger) => {
+    const placement = trigger.getAttribute("data-tooltip-placement");
+    return tooltipPlacements.has(placement) ? placement : "top";
+  };
+  const getTooltip = () => {
+    if (tooltip == null) {
+      tooltip = document.createElement("div");
+      tooltip.id = tooltipId;
+      tooltip.className = "tooltip";
+      tooltip.setAttribute("role", "tooltip");
+    }
+    return tooltip;
+  };
+  const setDescribedBy = (trigger, described) => {
+    const ids = new Set(
+      (trigger.getAttribute("aria-describedby") ?? "")
+        .split(/\s+/)
+        .filter(Boolean),
+    );
+    if (described) {
+      ids.add(tooltipId);
+    } else {
+      ids.delete(tooltipId);
+    }
+    if (ids.size === 0) {
+      trigger.removeAttribute("aria-describedby");
+    } else {
+      trigger.setAttribute("aria-describedby", [...ids].join(" "));
+    }
+  };
+  const clearOpenTimeout = () => {
+    if (openTimeout != null) {
+      window.clearTimeout(openTimeout);
+      openTimeout = null;
+    }
+    pendingTrigger = null;
+  };
+  const closeTooltip = (activateSkipDelay = true) => {
+    clearOpenTimeout();
+    pinnedByTouch = false;
+    positionRequest += 1;
+    autoUpdateCleanup?.();
+    autoUpdateCleanup = null;
+    if (activeTrigger == null) {
+      return;
+    }
+    setDescribedBy(activeTrigger, false);
+    activeTrigger = null;
+    tooltip?.remove();
+    if (activateSkipDelay) {
+      skipDelayUntil = Date.now() + skipDelay;
+    }
+  };
+  const updatePosition = (trigger, floating) => {
+    const request = ++positionRequest;
+    void computePosition(trigger, floating, {
+      middleware: [
+        offset(tooltipGap),
+        flip({ padding: tooltipGap }),
+        shift({ padding: tooltipGap }),
+        size({
+          padding: tooltipGap,
+          apply({ availableHeight, availableWidth, elements }) {
+            elements.floating.style.setProperty(
+              "--tooltip-available-width",
+              `${Math.max(0, availableWidth)}px`,
+            );
+            elements.floating.style.setProperty(
+              "--tooltip-available-height",
+              `${Math.max(0, availableHeight)}px`,
+            );
+          },
+        }),
+      ],
+      placement: getPlacement(trigger),
+      strategy: "fixed",
+    })
+      .then(({ x, y }) => {
+        if (activeTrigger !== trigger || request !== positionRequest) {
+          return;
+        }
+        const scale = window.devicePixelRatio || 1;
+        floating.style.transform = `translate(${Math.round(x * scale) / scale}px, ${Math.round(y * scale) / scale}px)`;
+        floating.style.visibility = "visible";
+      })
+      .catch(() => {
+        if (activeTrigger === trigger && request === positionRequest) {
+          closeTooltip(false);
+        }
+      });
+  };
+  const openTooltip = (trigger) => {
+    const content = getContent(trigger);
+    if (!trigger.isConnected || content.length === 0) {
+      return;
+    }
+    clearOpenTimeout();
+    if (activeTrigger === trigger) {
+      return;
+    }
+    closeTooltip();
+    const floating = getTooltip();
+    floating.textContent = content;
+    floating.style.visibility = "hidden";
+    floating.style.transform = "translate(0, 0)";
+    document.body.appendChild(floating);
+    activeTrigger = trigger;
+    setDescribedBy(trigger, true);
+    autoUpdateCleanup = autoUpdate(trigger, floating, () => {
+      updatePosition(trigger, floating);
+    });
+  };
+  const requestOpen = (trigger, immediate = false) => {
+    if (
+      getContent(trigger).length === 0 ||
+      activeTrigger === trigger ||
+      pendingTrigger === trigger
+    ) {
+      return;
+    }
+    clearOpenTimeout();
+    pendingTrigger = trigger;
+    const delay =
+      immediate || activeTrigger != null || Date.now() < skipDelayUntil
+        ? 0
+        : hoverDelay;
+    if (delay === 0) {
+      openTooltip(trigger);
+      return;
+    }
+    openTimeout = window.setTimeout(() => {
+      openTimeout = null;
+      pendingTrigger = null;
+      openTooltip(trigger);
+    }, delay);
+  };
+  const handlePointerOpen = (event) => {
+    if (event.pointerType === "touch") {
+      return;
+    }
+    const trigger = getTrigger(event);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    requestOpen(trigger);
+  };
+  const handlePointer = (event) => {
+    lastPointerWasTouch =
+      event.type === "pointerdown" && event.pointerType === "touch";
+  };
+  const handleTouchClick = (event) => {
+    const isTouch = event.pointerType === "touch" || lastPointerWasTouch;
+    lastPointerWasTouch = false;
+    if (!isTouch || event.detail === 0) {
+      return;
+    }
+    const trigger = getTrigger(event);
+    if (
+      trigger == null ||
+      !trigger.isConnected ||
+      getContent(trigger).length === 0 ||
+      (pinnedByTouch && activeTrigger === trigger)
+    ) {
+      if (pinnedByTouch) {
+        closeTooltip();
+      }
+      return;
+    }
+    openTooltip(trigger);
+    pinnedByTouch = activeTrigger === trigger;
+    window.setTimeout(() => {
+      if (activeTrigger === trigger && !trigger.isConnected) {
+        closeTooltip(false);
+      }
+    }, 0);
+  };
+  const handleLeave = (event) => {
+    if (pinnedByTouch) {
+      return;
+    }
+    const trigger = getTrigger(event);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const handleFocusIn = (event) => {
+    const trigger = getTrigger(event);
+    if (trigger?.matches(":focus-visible")) {
+      requestOpen(trigger, true);
+    }
+  };
+  const handleKeyDown = (event) => {
+    if (event.key === "Escape") {
+      closeTooltip();
+    }
+  };
+  const handleContextMenu = (event) => {
+    lastPointerWasTouch = false;
+    const trigger = getTrigger(event);
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const handlers = {
+    pointerover: handlePointerOpen,
+    pointerdown: handlePointer,
+    pointercancel: handlePointer,
+    click: handleTouchClick,
+    pointerout: handleLeave,
+    focusin: handleFocusIn,
+    focusout: handleLeave,
+    keydown: handleKeyDown,
+    contextmenu: handleContextMenu,
+  };
+  const roots = new Map();
+  const handledEvents = new WeakSet();
+  const handleEvent = (event) => {
+    if (handledEvents.has(event)) return;
+    handledEvents.add(event);
+    handlers[event.type](event);
+  };
+  const discoverRoots = (node) => {
+    if (node.shadowRoot) listen(node.shadowRoot);
+    for (const element of node.querySelectorAll("*")) {
+      if (element.shadowRoot) listen(element.shadowRoot);
+    }
+  };
+  const listen = (root) => {
+    if (roots.has(root)) return;
+    for (const type of Object.keys(handlers)) root.addEventListener(type, handleEvent);
+    const observer = new window.MutationObserver((records) => {
+      for (const { addedNodes } of records) {
+        for (const node of addedNodes) {
+          if (node.nodeType === Node.ELEMENT_NODE) discoverRoots(node);
+        }
+      }
+      for (const [root, cleanup] of roots) {
+        if (root.host && !root.host.isConnected) {
+          cleanup();
+          roots.delete(root);
+        }
+      }
+      if (activeTrigger && !activeTrigger.isConnected) closeTooltip(false);
+    });
+    observer.observe(root, { childList: true, subtree: true });
+    roots.set(root, () => {
+      observer.disconnect();
+      for (const type of Object.keys(handlers)) root.removeEventListener(type, handleEvent);
+    });
+    discoverRoots(root);
+  };
+  const destroy = () => {
+    closeTooltip(false);
+    lastPointerWasTouch = false;
+    for (const cleanup of roots.values()) cleanup();
+    roots.clear();
+    tooltip = null;
+  };
+
+  // Events between children of one shadow root never reach the document.
+  listen(document);
+  window.addEventListener("pagehide", destroy, { once: true });
+})();
+</script>
+<script id="codex-visualization-tabs">
+(() => {
+  const selector = '.nav[role="tablist"] [role="tab"]';
+  const disabled = ':disabled,[aria-disabled="true"]';
+  const selectTab = (selected) => {
+    const panelId = selected.getAttribute("aria-controls");
+    for (const tab of selected.closest('[role="tablist"]').querySelectorAll('[role="tab"]')) {
+      const active = tab === selected;
+      tab.classList.toggle("active", active);
+      tab.setAttribute("aria-selected", String(active));
+      const id = tab.getAttribute("aria-controls");
+      const panel = id && document.getElementById(id);
+      if (panel != null) {
+        panel.hidden = id !== panelId;
+        if (!panel.hidden && selected.id) {
+          panel.setAttribute("aria-labelledby", selected.id);
+        }
+      }
+    }
+  };
+  const interact = (event) => {
+    const tab = event.target?.closest?.(selector);
+    if (event.defaultPrevented || tab == null || tab.matches(disabled)) {
+      return;
+    }
+    if (event.type === "click") {
+      selectTab(tab);
+      return;
+    }
+    const tabs = Array.from(
+      tab.closest('[role="tablist"]').querySelectorAll('[role="tab"]'),
+    ).filter((candidate) => !candidate.matches(disabled));
+    const current = tabs.indexOf(tab);
+    let next;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      next = (current + 1) % tabs.length;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      next = (current + tabs.length - 1) % tabs.length;
+    } else if (event.key === "Home") {
+      next = 0;
+    } else if (event.key === "End") {
+      next = tabs.length - 1;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    tabs[next].focus();
+    selectTab(tabs[next]);
+  };
+
+  for (const list of document.querySelectorAll('.nav[role="tablist"]')) {
+    const selected =
+      list.querySelector('[role="tab"][aria-selected="true"]') ??
+      list.querySelector('[role="tab"].active') ??
+      list.querySelector('[role="tab"]');
+    if (selected != null) {
+      selectTab(selected);
+    }
+  }
+  document.addEventListener("click", interact);
+  document.addEventListener("keydown", interact);
+  window.addEventListener("pagehide", () => {
+    document.removeEventListener("click", interact);
+    document.removeEventListener("keydown", interact);
+  }, { once: true });
+})();
+</script>
+<script id="codex-visualization-carousel">
+  (() => {
+    for (const root of document.querySelectorAll(".viz-carousel")) {
+      const panels = Array.from(
+        root.querySelectorAll(":scope > [data-variant]"),
+      );
+      if (panels.length === 0) {
+        continue;
+      }
+      root.setAttribute("role", "group");
+      panels.forEach((panel, index) => {
+        panel.hidden = index !== 0;
+        panel.setAttribute("role", "group");
+        if (!panel.hasAttribute("aria-label")) {
+          panel.setAttribute("aria-label", panel.dataset.variant);
+        }
+      });
+      root.dataset.activeVariant = panels[0].dataset.variant;
+      if (panels.length === 1) {
+        continue;
+      }
+
+      const controls = document.createElement("div");
+      controls.className = "viz-carousel-controls";
+      // Portable copy of the settings dropdown's legacy glyph; no 14px icon-package preset matches it.
+      // https://github.com/openai/openai/blob/master/codex/codex-apps/webview/src/icons/chevron.svg
+      controls.innerHTML = `
+      <button type="button" class="viz-carousel-previous cursor-interaction"><i data-lucide="chevron-left" aria-hidden="true"></i></button>
+      <details class="viz-carousel-picker">
+        <summary class="cursor-interaction">
+          <span class="viz-carousel-count tabular-nums"></span>
+          <span class="viz-carousel-name"></span>
+          <svg class="viz-carousel-caret" width="14" height="14" viewBox="0 0 20 21" fill="none" aria-hidden="true" focusable="false">
+            <path d="M15.2793 7.71101C15.539 7.45131 15.961 7.45131 16.2207 7.71101C16.4804 7.97071 16.4804 8.39272 16.2207 8.65242L10.4707 14.4024C10.211 14.6621 9.78902 14.6621 9.52932 14.4024L3.77932 8.65242L3.69436 8.54792C3.52385 8.28979 3.55205 7.93828 3.77932 7.71101C4.00659 7.48374 4.3581 7.45554 4.61623 7.62605L4.72073 7.71101L10 12.9903L15.2793 7.71101Z" fill="currentColor" stroke="currentColor" stroke-width="0.6" />
+          </svg>
+        </summary>
+        <div class="viz-carousel-options"></div>
+      </details>
+      <button type="button" class="viz-carousel-next cursor-interaction"><i data-lucide="chevron-right" aria-hidden="true"></i></button>`;
+      const previous = controls.querySelector(".viz-carousel-previous");
+      const next = controls.querySelector(".viz-carousel-next");
+      const picker = controls.querySelector(".viz-carousel-picker");
+      const summary = picker.querySelector("summary");
+      const count = controls.querySelector(".viz-carousel-count");
+      const name = controls.querySelector(".viz-carousel-name");
+      const options = controls.querySelector(".viz-carousel-options");
+      const status = document.createElement("span");
+      status.className = "sr-only";
+      status.setAttribute("role", "status");
+      status.setAttribute("aria-live", "polite");
+      status.setAttribute("aria-atomic", "true");
+      previous.setAttribute(
+        "aria-label",
+        root.dataset.previousLabel ?? "Previous variant",
+      );
+      next.setAttribute("aria-label", root.dataset.nextLabel ?? "Next variant");
+
+      let active = 0;
+      let mousePointerId = null;
+      let summaryPointerHandled = false;
+      summary.addEventListener("pointerdown", (event) => {
+        summaryPointerHandled =
+          event.pointerType === "mouse" && event.button === 0 && !event.ctrlKey;
+        if (!summaryPointerHandled) {
+          return;
+        }
+        event.preventDefault();
+        summary.focus({ preventScroll: true });
+        picker.open = !picker.open;
+        mousePointerId = picker.open ? event.pointerId : null;
+      });
+      summary.addEventListener("click", (event) => {
+        if (summaryPointerHandled && event.detail > 0) {
+          event.preventDefault();
+        }
+      });
+      const choices = panels.map((panel, index) => {
+        const choice = document.createElement("button");
+        choice.type = "button";
+        choice.className = "cursor-interaction";
+        choice.textContent = panel.dataset.variant;
+        choice.addEventListener("click", () => {
+          select(index);
+          summary.focus();
+        });
+        choice.addEventListener("pointerup", (event) => {
+          if (
+            picker.open &&
+            event.pointerType === "mouse" &&
+            event.button === 0 &&
+            event.pointerId === mousePointerId
+          ) {
+            choice.click();
+          }
+        });
+        options.appendChild(choice);
+        return choice;
+      });
+      const select = (index) => {
+        const changed = active !== index;
+        active = index;
+        panels.forEach((panel, position) => {
+          panel.hidden = position !== active;
+          choices[position].setAttribute(
+            "aria-current",
+            String(position === active),
+          );
+        });
+        root.dataset.activeVariant = panels[active].dataset.variant;
+        count.textContent = `${active + 1} / ${panels.length}`;
+        name.textContent = panels[active].dataset.variant;
+        picker.open = false;
+        mousePointerId = null;
+        if (changed) {
+          status.textContent = `${count.textContent}: ${name.textContent}`;
+        }
+      };
+      previous.addEventListener("click", () =>
+        select((active + panels.length - 1) % panels.length),
+      );
+      next.addEventListener("click", () =>
+        select((active + 1) % panels.length),
+      );
+      picker.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && picker.open) {
+          event.preventDefault();
+          picker.open = false;
+          mousePointerId = null;
+          summary.focus();
+          return;
+        }
+        if (event.altKey || event.ctrlKey || event.metaKey) {
+          return;
+        }
+        const index = choices.indexOf(document.activeElement);
+        let nextIndex;
+        if (event.key === "ArrowDown") {
+          nextIndex = index < 0 ? active : (index + 1) % choices.length;
+        } else if (event.key === "ArrowUp") {
+          nextIndex = index < 0 ? active : (index + choices.length - 1) % choices.length;
+        } else if (picker.open && event.key === "Home") {
+          nextIndex = 0;
+        } else if (picker.open && event.key === "End") {
+          nextIndex = choices.length - 1;
+        } else {
+          return;
+        }
+        event.preventDefault();
+        picker.open = true;
+        choices[nextIndex].focus();
+      });
+      picker.addEventListener("focusout", (event) => {
+        if (!picker.contains(event.relatedTarget)) {
+          picker.open = false;
+          mousePointerId = null;
+        }
+      });
+      const dismiss = (event) => {
+        if (!summary.contains(event.target)) {
+          mousePointerId = null;
+        }
+        if (!picker.contains(event.target)) {
+          picker.open = false;
+        }
+      };
+      const endPointerSelection = () => {
+        mousePointerId = null;
+      };
+      const sizePicker = () => {
+        root.style.setProperty(
+          "--viz-carousel-picker-height",
+          `${picker.open ? options.offsetHeight : 0}px`,
+        );
+      };
+      picker.addEventListener("toggle", sizePicker);
+      window.addEventListener("resize", sizePicker);
+      document.addEventListener("pointerdown", dismiss);
+      document.addEventListener("pointerup", endPointerSelection);
+      document.addEventListener("pointercancel", endPointerSelection);
+      window.addEventListener("blur", endPointerSelection);
+      window.addEventListener(
+        "pagehide",
+        () => {
+          document.removeEventListener("pointerdown", dismiss);
+          document.removeEventListener("pointerup", endPointerSelection);
+          document.removeEventListener("pointercancel", endPointerSelection);
+          window.removeEventListener("blur", endPointerSelection);
+          window.removeEventListener("resize", sizePicker);
+        },
+        { once: true },
+      );
+      root.append(controls, status);
+      select(0);
+    }
+  })();
+</script>
+<script id="codex-visualization-lucide" async src="https://unpkg.com/lucide@1.17.0/dist/umd/lucide.js"></script>
+<script>
+(() => {
+  const initialize = () => {
+    globalThis.lucide?.createIcons({ attrs: { width: 16, height: 16 } });
+  };
+  if (globalThis.lucide != null) {
+    initialize();
+    return;
+  }
+  document
+    .getElementById("codex-visualization-lucide")
+    ?.addEventListener("load", initialize, { once: true });
+})();
+</script>
+
+</body>
+</html>
