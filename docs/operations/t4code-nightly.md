@@ -13,7 +13,7 @@ Start-ScheduledTask -TaskName 'T4 Code Nightly'
 
 The task runs daily at **03:23 in the PC's local time zone**. Supply `-At "04:00"` when registering to change the time. It runs with the signed-in user's normal privileges, opens no window, catches up on missed starts when available, and skips overlapping task runs. The PC must be on and the user must be signed in; it does not store a Windows password or wake the PC.
 
-Each run fast-forwards the dedicated checkout to the fork's `main`, installs the locked dependencies, builds Windows x64, and publishes a GitHub prerelease. It refuses dirty or diverged checkouts. GitHub CLI supplies credentials from the Windows user's existing login; no credentials are stored in the task or repository. The task records tool locations in the checkout's gitignored `.t3/nightly/tool-paths.json` so it also works without a shell profile.
+Each run fast-forwards the dedicated checkout to the fork's `main`, builds Windows x64, and publishes a GitHub prerelease. It reuses the verified dependency install while the lockfile, manifests, install configuration, and patches are unchanged; changed inputs trigger a frozen install. The recorded install commit advances only after installation succeeds. It refuses dirty or diverged checkouts. GitHub CLI supplies credentials from the Windows user's existing login; no credentials are stored in the task or repository. The task records tool locations in the checkout's gitignored `.t3/nightly/tool-paths.json` so it also works without a shell profile.
 
 Inspect progress in `.t3/nightly/logs` and inspect the scheduler result with:
 

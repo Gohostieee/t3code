@@ -12,9 +12,11 @@ if (Test-Path -LiteralPath $toolsFile) {
   $env:Path = (@($toolPaths) + @($env:Path)) -join [IO.Path]::PathSeparator
 }
 $logPath = Join-Path $logDir "$((Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')).log"
-Start-Transcript -LiteralPath $logPath -ErrorAction Stop | Out-Null
+"T4 nightly started at $((Get-Date).ToUniversalTime().ToString('o'))" |
+  Set-Content -LiteralPath $logPath -Encoding utf8 -ErrorAction Stop
 Push-Location -LiteralPath $repoRoot
 try {
+  & {
   $dirty = & git status --porcelain
   if ($LASTEXITCODE -ne 0) { throw "Cannot inspect the nightly checkout." }
   if ($dirty) { throw "The nightly checkout has uncommitted changes; refusing to update it." }
@@ -30,9 +32,21 @@ try {
   }
   & gh api user --jq .login
   if ($LASTEXITCODE -ne 0) { throw "Sign in to GitHub CLI as the scheduled task's Windows user." }
-  if (-not $SkipInstall) {
+  $installCommitPath = Join-Path $stateDir "install-commit.txt"
+  $needsInstall = -not (Test-Path -LiteralPath (Join-Path $repoRoot "node_modules/.modules.yaml"))
+  if (Test-Path -LiteralPath $installCommitPath) {
+    $installedCommit = (Get-Content -LiteralPath $installCommitPath -Raw -ErrorAction Stop).Trim()
+    $dependencyChanges = & git diff --name-only $installedCommit $commit -- package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs ':(glob)apps/**/package.json' ':(glob)packages/**/package.json' ':(glob)infra/**/package.json' scripts/package.json patches/
+    $needsInstall = $needsInstall -or $LASTEXITCODE -ne 0 -or [bool]$dependencyChanges
+  } else {
+    $needsInstall = $true
+  }
+  if ($needsInstall -and -not $SkipInstall) {
     & vp install --frozen-lockfile -- --side-effects-cache=false --yes
     if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed." }
+    $commit | Set-Content -LiteralPath $installCommitPath -Encoding ascii -ErrorAction Stop
+  } else {
+    Write-Output "Reusing the installed dependencies; dependency inputs have not changed."
   }
   & vp run --filter '@t3tools/desktop' ensure:electron
   if ($LASTEXITCODE -ne 0) { throw "Cannot prepare the Electron runtime." }
@@ -70,10 +84,14 @@ try {
   Get-ChildItem -LiteralPath $logDir -Filter '*.log' -File | Sort-Object Name -Descending |
     Select-Object -Skip 30 | ForEach-Object { Remove-Item -LiteralPath $_.FullName -ErrorAction Stop }
   Write-Output "Published https://github.com/Gohostieee/t3code/releases/tag/$tag"
+  } *>&1 | ForEach-Object {
+    [IO.File]::AppendAllText($logPath, "$($_.ToString())$([Environment]::NewLine)")
+    Write-Output $_
+  }
 } catch {
+  [IO.File]::AppendAllText($logPath, ($_ | Out-String))
   Write-Error $_
   exit 1
 } finally {
   Pop-Location
-  Stop-Transcript | Out-Null
 }

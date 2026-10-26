@@ -4,6 +4,15 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $stateDir = Join-Path $repoRoot ".t3/nightly"
 New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
+$installCommitPath = Join-Path $stateDir "install-commit.txt"
+if (-not (Test-Path -LiteralPath $installCommitPath)) {
+  if (-not (Test-Path -LiteralPath (Join-Path $repoRoot "node_modules/.modules.yaml"))) {
+    throw "Run vp install --frozen-lockfile successfully in this checkout before registering the nightly task."
+  }
+  $installedCommit = & git -C $repoRoot rev-parse HEAD
+  if ($LASTEXITCODE -ne 0) { throw "Cannot identify the installed checkout." }
+  $installedCommit | Set-Content -LiteralPath $installCommitPath -Encoding ascii
+}
 $toolPaths = @('git', 'gh', 'vp', 'cargo', 'node', 'python') | ForEach-Object {
   Split-Path -Parent (Get-Command $_ -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 } | Select-Object -Unique
