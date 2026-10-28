@@ -163,6 +163,11 @@ import {
 import { VcsError } from "./vcs.ts";
 import { CodebaseError } from "./codebase.ts";
 import {
+  CodebaseAtlasInput,
+  CodebaseAtlasReadInput,
+  CodebaseAtlasSnapshot,
+} from "./codebaseAtlas.ts";
+import {
   CodebaseReadInput,
   CodebaseSnapshot,
   CodebaseStartInput,
@@ -174,6 +179,8 @@ import {
 } from "./codebaseRpc.ts";
 
 export const WS_METHODS = {
+  codebaseAtlas: "codebase.atlas",
+  codebaseAtlasRead: "codebase.atlasRead",
   codebaseRead: "codebase.read",
   codebaseConfigure: "codebase.configure",
   codebaseStart: "codebase.start",
@@ -801,6 +808,16 @@ export const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeReso
 });
 
 export const WsRpcGroup = RpcGroup.make(
+  Rpc.make(WS_METHODS.codebaseAtlas, {
+    payload: CodebaseAtlasInput,
+    success: CodebaseAtlasSnapshot,
+    error: Schema.Union([CodebaseError, EnvironmentAuthorizationError]),
+  }),
+  Rpc.make(WS_METHODS.codebaseAtlasRead, {
+    payload: CodebaseAtlasReadInput,
+    success: CodebaseAtlasSnapshot,
+    error: Schema.Union([CodebaseError, EnvironmentAuthorizationError]),
+  }),
   Rpc.make(WS_METHODS.codebaseRead, {
     payload: CodebaseReadInput,
     success: CodebaseSnapshot,

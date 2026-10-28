@@ -2,7 +2,7 @@ import { CODEBASE_LIMITS, CodebaseGraph, type CodebaseNode } from "@t3tools/cont
 import * as Schema from "effect/Schema";
 
 const excludedSource =
-  /(^|\/)(node_modules|vendor|dist|build|coverage|\.git|\.t3|\.t3-codebase|\.next|\.cache|\.repos|target)(\/|$)|(^|\/)\.env(?:\.|$)|\.(png|jpe?g|gif|webp|ico|pdf|woff2?|ttf|mp[34]|zip|sqlite(?:-wal|-shm)?)$/i;
+  /(^|\/)(node_modules|vendor|dist|build|coverage|\.git|\.t3|\.t3-codebase|\.next|\.cache|\.repos|\.generated|target)(\/|$)|(^|\/)\.env(?:\.|$)|\.(sqlite(?:-wal|-shm)?|pem|key|p12)$/i;
 export const isExcludedCodebaseSource = (path: string) => excludedSource.test(path);
 
 export function codebaseSourcePriority(path: string, focusPaths: ReadonlyArray<string>) {
@@ -48,13 +48,16 @@ export function buildCodebaseInput(input: {
   focus: CodebaseNode | null;
   previousNodes: ReadonlyArray<CodebaseNode>;
   inventory: ReadonlyArray<{ path: string; text: string | null }>;
+  sourceRange?: { path: string; startLine: number } | undefined;
 }) {
   const focusPaths = input.focus?.sources.map((source) => source.path) ?? [];
-  const ranked = [...input.inventory].sort(
-    (a, b) =>
-      codebaseSourcePriority(a.path, focusPaths) - codebaseSourcePriority(b.path, focusPaths) ||
-      a.path.localeCompare(b.path),
-  );
+  const ranked = input.inventory
+    .filter((file) => !input.sourceRange || file.path === input.sourceRange.path)
+    .toSorted(
+      (a, b) =>
+        codebaseSourcePriority(a.path, focusPaths) - codebaseSourcePriority(b.path, focusPaths) ||
+        a.path.localeCompare(b.path),
+    );
   const identities = boundedItems(
     input.previousNodes.map(({ id, name, childScopeId }) => ({
       id,
@@ -101,6 +104,8 @@ export function buildCodebaseInput(input: {
     .slice(0, 16000)}\nSource:\n`;
   const supplied: Array<{ path: string; startLine: number; endLine: number; truncated: boolean }> =
     [];
+  if (input.sourceRange)
+    prompt += `Source coverage pass: analyze every supplied line of ${input.sourceRange.path} starting at line ${input.sourceRange.startLine}. Describe concrete responsibilities in this slice. Mark atomic functions and data as non-expandable. Do not create another layer with the same source range.\n`;
   for (const file of ranked) {
     if (!file.text) continue;
     const headerAllowance = file.path.length + 100;
@@ -111,7 +116,7 @@ export function buildCodebaseInput(input: {
     if (budget < 300) break;
     const lines = file.text.split("\n");
     const anchor = input.focus?.sources.find((source) => source.path === file.path);
-    const startLine = Math.max(1, (anchor?.startLine ?? 1) - 8);
+    const startLine = input.sourceRange?.startLine ?? Math.max(1, (anchor?.startLine ?? 1) - 8);
     let excerpt = "";
     let endLine = startLine - 1;
     for (let index = startLine - 1; index < lines.length; index++) {

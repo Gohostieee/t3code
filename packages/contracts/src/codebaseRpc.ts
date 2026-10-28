@@ -2,12 +2,15 @@ import { ProviderInstanceId } from "./providerInstance.ts";
 import * as Schema from "effect/Schema";
 import { CommandId, ProjectId, ThreadId } from "./baseSchemas.ts";
 import { ModelSelection } from "./orchestration.ts";
+import { AtlasJob } from "./codebaseAtlas.ts";
 import {
   CodebaseAnalysis,
   CodebaseAnalyzers,
   CodebaseManifest,
   CodebaseScope,
   CodebaseScopeId,
+  CodebaseExploration,
+  CodebaseIndexReport,
 } from "./codebase.ts";
 
 export const CodebaseCheckoutInput = Schema.Struct({
@@ -19,6 +22,9 @@ export type CodebaseCheckoutInput = typeof CodebaseCheckoutInput.Type;
 export const CodebaseReadInput = Schema.Struct({
   ...CodebaseCheckoutInput.fields,
   scopeId: CodebaseScopeId,
+  fileQuery: Schema.optional(Schema.String.check(Schema.isMaxLength(1024))),
+  fileOffset: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  changedFilesOnly: Schema.optional(Schema.Boolean),
 });
 export type CodebaseReadInput = typeof CodebaseReadInput.Type;
 export const CodebaseMapState = Schema.Literals([
@@ -41,6 +47,7 @@ export const CodebaseSnapshot = Schema.Struct({
   state: CodebaseMapState,
   freshness: Schema.Literals(["current", "stale", "unknown"]),
   revision: Schema.NullOr(Schema.String),
+  overviewRevision: Schema.optional(Schema.NullOr(Schema.String)),
   configurationRevision: Schema.NullOr(Schema.String),
   manifest: Schema.NullOr(CodebaseManifest),
   scope: Schema.NullOr(CodebaseScope),
@@ -49,6 +56,7 @@ export const CodebaseSnapshot = Schema.Struct({
   analyzerBindings: Schema.optional(CodebaseAnalyzerBindings),
   supportedProviderInstanceIds: Schema.optional(Schema.Array(ProviderInstanceId)),
   worktrees: Schema.optional(Schema.Array(Schema.String)),
+  index: Schema.optional(CodebaseIndexReport),
 });
 export type CodebaseSnapshot = typeof CodebaseSnapshot.Type;
 export const CodebaseRun = Schema.Struct({
@@ -79,9 +87,12 @@ export const CodebaseCancelInput = Schema.Struct({
 });
 export type CodebaseCancelInput = typeof CodebaseCancelInput.Type;
 export const CodebaseProgress = Schema.Struct({
+  atlasRevision: Schema.optional(Schema.String),
+  atlasJobs: Schema.optional(Schema.Array(AtlasJob).check(Schema.isMaxLength(50))),
   checkout: Schema.String,
   runs: Schema.Array(CodebaseRun).check(Schema.isMaxLength(50)),
   artifactsChanged: Schema.Boolean,
   diskRevision: Schema.optional(Schema.String),
+  exploration: Schema.optional(Schema.NullOr(CodebaseExploration)),
 });
 export type CodebaseProgress = typeof CodebaseProgress.Type;

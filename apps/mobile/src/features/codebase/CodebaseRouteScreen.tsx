@@ -1,4 +1,6 @@
 import { environmentThreadDetails } from "../../state/threads";
+import { CodebaseAtlas } from "./CodebaseAtlas";
+import { CodebaseFiles } from "./CodebaseFiles";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useAtomValue } from "@effect/atom-react";
@@ -17,6 +19,7 @@ import {
   portableCodebaseAnalyzer,
   resolveCodebaseAnalyzer,
   codebaseProgressRevision,
+  codebaseExplorationLabel,
 } from "@t3tools/client-runtime/state/codebase";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AppText as Text } from "../../components/AppText";
@@ -48,6 +51,7 @@ export function CodebaseLink({ params = {} }: { params?: Params }) {
 }
 
 export function CodebaseRouteScreen({ route }: StaticScreenProps<Params>) {
+  const [legacy, setLegacy] = useState(false);
   const navigation = useNavigation();
   const projects = useProjects();
   const project =
@@ -82,11 +86,27 @@ export function CodebaseRouteScreen({ route }: StaticScreenProps<Params>) {
         </ControlPillMenu>
       </View>
       {project ? (
-        <Explorer
-          key={`${project.environmentId}:${project.id}:${route.params.checkout ?? route.params.threadId ?? "main"}`}
-          project={project}
-          params={route.params}
-        />
+        legacy ? (
+          <>
+            <ControlPill
+              label="Back to source atlas"
+              variant="pill"
+              onPress={() => setLegacy(false)}
+            />
+            <Explorer
+              key={`${project.environmentId}:${project.id}:${route.params.checkout ?? route.params.threadId ?? "main"}`}
+              project={project}
+              params={route.params}
+            />
+          </>
+        ) : (
+          <CodebaseAtlas
+            key={`${project.environmentId}:${project.id}:${route.params.checkout ?? route.params.threadId ?? "main"}`}
+            project={project}
+            params={route.params}
+            onLegacy={() => setLegacy(true)}
+          />
+        )
       ) : (
         <Text className="p-5 text-foreground-muted">Add a project to explore its codebase.</Text>
       )}
@@ -137,9 +157,11 @@ function Source({
 function Explorer({
   project,
   params,
+  readOnly = true,
 }: {
   project: ReturnType<typeof useProjects>[number];
   params: Params;
+  readOnly?: boolean;
 }) {
   const navigation = useNavigation();
   const threads = useThreadShells();
@@ -165,6 +187,7 @@ function Explorer({
   const [override, setOverride] = useState<ModelSelection | null>(null);
   const [source, setSource] = useState<CodebaseSource | null>(null);
   const [showActivity, setShowActivity] = useState(false);
+  const [showFiles, setShowFiles] = useState(false);
   const [transcript, setTranscript] = useState<ScopedThreadRef | null>(null);
   const [setup, setSetup] = useState<keyof CodebaseAnalyzers | null>(null);
   const [setupSelection, setSetupSelection] = useState<ModelSelection | null>(null);
@@ -176,6 +199,11 @@ function Explorer({
     codebaseEnvironment.read({ ...target, input: { ...target.input, scopeId: scope.id } }),
   );
   const progress = useEnvironmentQuery(codebaseEnvironment.progress(target));
+  const exploration = progress.data?.exploration;
+  const exploring = exploration?.status === "running";
+  const currentRun = progress.data?.runs.find(
+    (run) => run.threadId === exploration?.currentThreadId,
+  );
   const refresh = useRef(map.refresh);
   refresh.current = map.refresh;
   const revision = codebaseProgressRevision(progress.data);
@@ -187,13 +215,11 @@ function Explorer({
   }, [scope.id, map.data?.scope?.scopeId]);
   const chosen = resolveCodebaseAnalyzer({
     analyzers: map.data?.manifest?.analyzers ?? {},
-    passKind: (map.data?.scope?.parentScopeId ?? scope.parent) ? "detail" : "overview",
+    passKind: scope.id === "overview" ? "overview" : "detail",
     providers,
     chatDefault: project.defaultModelSelection,
     binding:
-      map.data?.analyzerBindings?.[
-        (map.data?.scope?.parentScopeId ?? scope.parent) ? "detail" : "overview"
-      ] ??
+      map.data?.analyzerBindings?.[scope.id === "overview" ? "overview" : "detail"] ??
       map.data?.analyzerBindings?.default ??
       progress.data?.runs[0]?.modelSelection,
     override,
@@ -204,6 +230,36 @@ function Explorer({
   const active = progress.data?.runs.find(
     (run) => run.analysis.scopeId === scope.id && isCodebaseAnalysisActive(run.analysis.status),
   );
+  const overviewChoice = resolveCodebaseAnalyzer({
+    analyzers: map.data?.manifest?.analyzers ?? {},
+    passKind: "overview",
+    providers,
+    chatDefault: project.defaultModelSelection,
+    binding:
+      map.data?.analyzerBindings?.overview ??
+      map.data?.analyzerBindings?.default ??
+      chosen.selection,
+    override,
+  });
+  const detailChoice = resolveCodebaseAnalyzer({
+    analyzers: map.data?.manifest?.analyzers ?? {},
+    passKind: "detail",
+    providers,
+    chatDefault: project.defaultModelSelection,
+    binding:
+      map.data?.analyzerBindings?.detail ??
+      map.data?.analyzerBindings?.default ??
+      overviewChoice.selection,
+    override,
+  });
+  const explorationReason =
+    overviewChoice.reason ??
+    detailChoice.reason ??
+    (detailChoice.selection &&
+    map.data?.supportedProviderInstanceIds &&
+    !map.data.supportedProviderInstanceIds.includes(detailChoice.selection.instanceId)
+      ? "The detail analyzer cannot enforce inspection permissions. Choose a supported analyzer in AI setup."
+      : null);
   const graph = map.data?.scope?.graph;
   const node = graph?.nodes.find((item) => item.id === selected);
   const edge = graph?.edges.find((item) => item.id === selected);
@@ -227,26 +283,31 @@ function Explorer({
         { id, title: item.name, parent: item.boundaryScopeId ? null : scope.id },
       ]);
   };
-  const build = async () => {
-    if (!chosen.selection) return;
+  const build = async (all = false) => {
+    if (readOnly) return;
+    const model = all ? overviewChoice.selection : chosen.selection;
+    if (!model || (all && !detailChoice.selection)) return;
     setBusy(true);
     setError(null);
     const result = await start({
       ...target,
       input: {
         ...target.input,
-        scopeId: scope.id,
-        parentScopeId: map.data?.scope?.parentScopeId ?? scope.parent,
-        expectedRevision: map.data?.revision ?? null,
+        scopeId: all ? "overview" : scope.id,
+        parentScopeId: all ? null : (map.data?.scope?.parentScopeId ?? scope.parent),
+        expectedRevision: (all ? map.data?.overviewRevision : map.data?.revision) ?? null,
         commandId: CommandId.make(uuidv4()),
-        modelSelection: chosen.selection,
+        modelSelection: model,
+        ...(all && detailChoice.selection
+          ? { exploreAll: true, detailModelSelection: detailChoice.selection }
+          : {}),
       },
     });
     if (result._tag === "Failure") setError(String(squashAtomCommandFailure(result)));
     setBusy(false);
   };
   const save = async (inherit = false) => {
-    if (!setup) return;
+    if (readOnly || !setup) return;
     const analyzers = { ...map.data?.manifest?.analyzers };
     if (inherit) delete analyzers[setup];
     else {
@@ -304,41 +365,58 @@ function Explorer({
         <Text className="text-foreground-muted">
           {map.data?.scope
             ? `Map ${map.data.freshness}`
-            : "Not built. Analysis starts only when you choose Build."}
+            : "Explore codebase builds every discovered layer and analyzes remaining source automatically."}
         </Text>
-        {(error ?? map.error ?? progress.error ?? chosen.reason ?? map.data?.detail) && (
+        {(error ??
+          map.error ??
+          progress.error ??
+          chosen.reason ??
+          explorationReason ??
+          map.data?.detail) && (
           <Text accessibilityRole="alert">
-            {error ?? map.error ?? progress.error ?? chosen.reason ?? map.data?.detail}
+            {error ??
+              map.error ??
+              progress.error ??
+              chosen.reason ??
+              explorationReason ??
+              map.data?.detail}
           </Text>
         )}
-        <ControlPillMenu
-          actions={groupByProvider(models).map((group) => ({
-            id: group.providerKey,
-            title: group.providerLabel,
-            subactions: group.models.map((entry) => ({
-              id: entry.key,
-              title: entry.label,
-              attributes: map.data?.supportedProviderInstanceIds?.includes(
-                entry.selection.instanceId,
-              )
-                ? undefined
-                : { disabled: true },
-            })),
-          }))}
-          onPressAction={({ nativeEvent }) => {
-            const next = models.find((entry) => entry.key === nativeEvent.event);
-            if (next) setSelection(next.selection);
-          }}
-        >
-          <ControlPill
-            variant="pill"
-            label={model ? `${model.providerLabel} · ${model.label}` : "Choose analyzer"}
-          />
-        </ControlPillMenu>
+        {readOnly && (
+          <Text className="text-sm text-foreground-muted">
+            Legacy AI map · read-only documentation. Use the source atlas to index this checkout.
+          </Text>
+        )}
+        {!readOnly && (
+          <ControlPillMenu
+            actions={groupByProvider(models).map((group) => ({
+              id: group.providerKey,
+              title: group.providerLabel,
+              subactions: group.models.map((entry) => ({
+                id: entry.key,
+                title: entry.label,
+                attributes: map.data?.supportedProviderInstanceIds?.includes(
+                  entry.selection.instanceId,
+                )
+                  ? undefined
+                  : { disabled: true },
+              })),
+            }))}
+            onPressAction={({ nativeEvent }) => {
+              const next = models.find((entry) => entry.key === nativeEvent.event);
+              if (next) setSelection(next.selection);
+            }}
+          >
+            <ControlPill
+              variant="pill"
+              label={model ? `${model.providerLabel} · ${model.label}` : "Choose analyzer"}
+            />
+          </ControlPillMenu>
+        )}
         <Text className="text-xs text-foreground-muted">
           Adapters without inspection permissions are unavailable.
         </Text>
-        {selection && options.length > 0 && (
+        {!readOnly && selection && options.length > 0 && (
           <ControlPillMenu
             actions={[...buildProviderOptionMenuActions(options)]}
             onPressAction={({ nativeEvent }) => {
@@ -352,13 +430,33 @@ function Explorer({
         <View className="flex-row flex-wrap gap-2">
           <ControlPill
             variant="primary"
+            label={exploring ? "Exploring…" : "Explore codebase"}
+            disabled={
+              readOnly ||
+              busy ||
+              !!active ||
+              exploring ||
+              !map.data ||
+              !overviewChoice.selection ||
+              !!overviewChoice.reason ||
+              !!detailChoice.reason ||
+              !!explorationReason ||
+              !["ready", "unbuilt"].includes(map.data.state) ||
+              !map.data.supportedProviderInstanceIds?.includes(overviewChoice.selection.instanceId)
+            }
+            onPress={() => void build(true)}
+          />
+          <ControlPill
+            variant="pill"
             label={
               active?.analysis.status ??
               (graph ? "Refresh this scope" : scope.parent ? "Build this layer" : "Build overview")
             }
             disabled={
+              readOnly ||
               busy ||
               !!active ||
+              exploring ||
               !!chosen.reason ||
               !chosen.selection ||
               !map.data?.supportedProviderInstanceIds?.includes(chosen.selection.instanceId) ||
@@ -374,31 +472,73 @@ function Explorer({
             onPress={() => setShowActivity(!showActivity)}
           />
         </View>
-        <ControlPillMenu
-          actions={[
-            { id: "default", title: "Default analyzer" },
-            { id: "overview", title: "Overview override" },
-            { id: "detail", title: "Detail override" },
-          ]}
-          onPressAction={({ nativeEvent }) => {
-            const slot = nativeEvent.event as keyof CodebaseAnalyzers;
-            setSetup(slot);
-            setSetupSelection(
-              resolveCodebaseAnalyzer({
-                analyzers: {
-                  default:
-                    map.data?.manifest?.analyzers[slot] ?? map.data?.manifest?.analyzers.default,
-                },
-                passKind: "overview",
-                providers,
-                chatDefault: project.defaultModelSelection,
-                binding: chosen.selection,
-              }).selection,
-            );
-          }}
-        >
-          <ControlPill variant="pill" label="AI setup" />
-        </ControlPillMenu>
+        {exploration && (
+          <View className="gap-2 rounded-xl bg-subtle p-4" accessibilityLiveRegion="polite">
+            <Text className="font-t3-bold">
+              {codebaseExplorationLabel(exploration, currentRun?.analysis)}
+            </Text>
+            <Text className="text-xs text-foreground-muted">
+              {exploration.completedScopes} layers explored · {exploration.discoveredScopes}{" "}
+              discovered · {exploration.inspectedFiles} of {exploration.totalFiles} files fully
+              supplied · {exploration.excludedFiles} excluded
+            </Text>
+            {exploration.detail && <Text className="text-xs">{exploration.detail}</Text>}
+            {exploring && (
+              <ControlPill
+                label="Stop exploration"
+                variant="pill"
+                onPress={() =>
+                  void (async () => {
+                    const result = await cancel({
+                      ...target,
+                      input: { ...target.input, runThreadId: exploration.rootThreadId },
+                    });
+                    if (result._tag === "Failure")
+                      setError(String(squashAtomCommandFailure(result)));
+                  })()
+                }
+              />
+            )}
+          </View>
+        )}
+        <ControlPill
+          variant="pill"
+          label="Files and change impact"
+          onPress={() => setShowFiles(true)}
+        />
+        {map.data?.index && (
+          <Text className="text-xs text-foreground-muted">
+            {map.data.index.changedFiles} changed files · {map.data.index.staleScopes} maps need
+            review
+          </Text>
+        )}
+        {!readOnly && (
+          <ControlPillMenu
+            actions={[
+              { id: "default", title: "Default analyzer" },
+              { id: "overview", title: "Overview override" },
+              { id: "detail", title: "Detail override" },
+            ]}
+            onPressAction={({ nativeEvent }) => {
+              const slot = nativeEvent.event as keyof CodebaseAnalyzers;
+              setSetup(slot);
+              setSetupSelection(
+                resolveCodebaseAnalyzer({
+                  analyzers: {
+                    default:
+                      map.data?.manifest?.analyzers[slot] ?? map.data?.manifest?.analyzers.default,
+                  },
+                  passKind: "overview",
+                  providers,
+                  chatDefault: project.defaultModelSelection,
+                  binding: chosen.selection,
+                }).selection,
+              );
+            }}
+          >
+            <ControlPill variant="pill" label="AI setup" />
+          </ControlPillMenu>
+        )}
         {setup && (
           <View className="gap-3 rounded-xl bg-subtle p-4">
             <Text>Editing {setup}. Choose the model above.</Text>
@@ -568,6 +708,18 @@ function Explorer({
         )}
       </ScrollView>
       {transcript && <Transcript threadRef={transcript} close={() => setTranscript(null)} />}
+      {showFiles && (
+        <CodebaseFiles
+          environmentId={project.environmentId}
+          input={target.input}
+          revision={revision}
+          close={() => setShowFiles(false)}
+          openScope={(id, title) => {
+            setShowFiles(false);
+            setHistory((previous) => [...previous, { id, title, parent: null }]);
+          }}
+        />
+      )}
       {source && map.data && (
         <Source
           project={project}

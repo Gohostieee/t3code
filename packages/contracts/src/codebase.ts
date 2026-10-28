@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { CommandId, IsoDateTime, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { CommandId, IsoDateTime, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ProviderDriverKind } from "./providerInstance.ts";
 import { ProviderOptionSelection } from "./model.ts";
 
@@ -11,6 +11,9 @@ export const CODEBASE_LIMITS = {
   sourceFiles: 20_000,
   sourceFileBytes: 1024 * 1024,
   promptCharacters: 90_000,
+  indexBytes: 32 * 1024 * 1024,
+  explorationDepth: 16,
+  explorationScopes: 20_000,
 } as const;
 
 const ShortText = TrimmedNonEmptyString.check(Schema.isMaxLength(240));
@@ -129,6 +132,12 @@ export const CodebaseGraph = Schema.Struct({
 );
 export type CodebaseGraph = typeof CodebaseGraph.Type;
 
+export const CodebaseSourceRange = Schema.Struct({
+  path: CodebaseRelativePath,
+  startLine: Schema.Int.check(Schema.isGreaterThan(0)),
+});
+export type CodebaseSourceRange = typeof CodebaseSourceRange.Type;
+
 export const CodebaseScope = Schema.Struct({
   version: Schema.Literal(1),
   scopeId: CodebaseScopeId,
@@ -136,6 +145,8 @@ export const CodebaseScope = Schema.Struct({
   graph: CodebaseGraph,
   sourceFingerprint: Schema.String,
   configurationFingerprint: Schema.String,
+  sourceRange: Schema.optional(CodebaseSourceRange),
+  inspectedSources: Schema.optional(Schema.Array(CodebaseSource)),
   coverage: Schema.Struct({
     inventoryFiles: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
     referencedFiles: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
@@ -175,6 +186,8 @@ export const CodebaseAnalysis = Schema.Struct({
   acceptedRevision: Schema.NullOr(Schema.String),
   detail: Schema.NullOr(Schema.String),
   updatedAt: IsoDateTime,
+  explorationId: Schema.optional(CommandId),
+  sourceRange: Schema.optional(CodebaseSourceRange),
 });
 export type CodebaseAnalysis = typeof CodebaseAnalysis.Type;
 export const isCodebaseAnalysisActive = (status: CodebaseAnalysisStatus) =>
@@ -183,6 +196,62 @@ export const isCodebaseAnalysisActive = (status: CodebaseAnalysisStatus) =>
   status === "waiting" ||
   status === "validating" ||
   status === "saving";
+
+export const CodebaseExploration = Schema.Struct({
+  id: CommandId,
+  rootThreadId: ThreadId,
+  currentThreadId: Schema.NullOr(ThreadId),
+  currentScopeId: Schema.NullOr(CodebaseScopeId),
+  currentLabel: Schema.String,
+  status: Schema.Literals([
+    "running",
+    "completed",
+    "failed",
+    "cancelled",
+    "input-changed",
+    "interrupted",
+    "incomplete",
+  ]),
+  completedScopes: Schema.Number,
+  discoveredScopes: Schema.Number,
+  inspectedFiles: Schema.Number,
+  totalFiles: Schema.Number,
+  excludedFiles: Schema.Number,
+  detail: Schema.NullOr(Schema.String),
+  updatedAt: IsoDateTime,
+});
+export type CodebaseExploration = typeof CodebaseExploration.Type;
+
+export const CodebaseFileReport = Schema.Struct({
+  path: CodebaseRelativePath,
+  sha256: Schema.NullOr(Schema.String),
+  previousSha256: Schema.NullOr(Schema.String),
+  change: Schema.Literals(["unchanged", "added", "modified", "deleted", "unindexed"]),
+  inspected: Schema.Boolean,
+  exclusion: Schema.NullOr(Schema.String),
+  dependsOn: Schema.Array(CodebaseRelativePath),
+  affectedFiles: Schema.Array(CodebaseRelativePath),
+  affectedFileCount: Schema.Number,
+  scopes: Schema.Array(Schema.Struct({ scopeId: CodebaseScopeId, title: Schema.String })),
+  affectedScopes: Schema.Array(
+    Schema.Struct({ scopeId: CodebaseScopeId, title: Schema.String, stale: Schema.Boolean }),
+  ),
+  affectedScopeCount: Schema.Number,
+});
+export type CodebaseFileReport = typeof CodebaseFileReport.Type;
+export const CodebaseIndexReport = Schema.Struct({
+  totalFiles: Schema.Number,
+  inspectedFiles: Schema.Number,
+  excludedFiles: Schema.Number,
+  changedFiles: Schema.Number,
+  affectedFiles: Schema.Number,
+  staleScopes: Schema.Number,
+  totalScopes: Schema.Number,
+  matchingFiles: Schema.Number,
+  offset: Schema.Number,
+  files: Schema.Array(CodebaseFileReport).check(Schema.isMaxLength(50)),
+});
+export type CodebaseIndexReport = typeof CodebaseIndexReport.Type;
 
 export class CodebaseError extends Schema.TaggedErrorClass<CodebaseError>()("CodebaseError", {
   code: Schema.Literals(["unavailable", "unsupported", "invalid", "conflict", "busy", "io"]),

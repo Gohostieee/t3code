@@ -148,6 +148,14 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 
 ## Practical Shortcuts
 
+### Codebase atlas
+
+The accepted source-derived structure for one checkout and application. Compiler and framework evidence establishes its facts; it does not assert runtime execution. See [Codebase Atlas](codebase-atlas.md).
+
+### Page scenario and capture
+
+A **scenario** is a user-authored route setup with concrete parameters, viewport, optional private profile, and readiness assertion. A **capture** is one environment-owned browser observation of that scenario. Scenario definitions are portable; images, profiles, and target origins stay local to the environment.
+
 - If you see `requested`, think "intent recorded".
 - If you see `completed`, think "result applied".
 - If you see `receipt`, think "async milestone signal, for tests".

@@ -56,6 +56,23 @@ it("counts every file excluded by the final prompt budget and supplies schema de
     expect(isExcludedCodebaseSource(path)).toBe(true);
 });
 
+it("continues an uncovered source file from its next original line instead of repeating its header", () => {
+  const result = buildCodebaseInput({
+    scopeId: "file_slice",
+    previousNodes: [],
+    focus: null,
+    sourceRange: { path: "late.ts", startLine: 400 },
+    inventory: [
+      { path: "README.md", text: "Unrelated" },
+      { path: "late.ts", text: "export const line = 1;\n".repeat(500) },
+    ],
+  });
+  expect(result.supplied).toHaveLength(1);
+  expect(result.supplied[0]?.startLine).toBe(400);
+  expect(result.prompt).toContain("400: export const line = 1;");
+  expect(result.prompt).not.toContain("1: Unrelated");
+});
+
 it("keeps long source paths within budget and supplies the parent boundary on the first detail pass", () => {
   const result = buildCodebaseInput({
     scopeId: "detail",

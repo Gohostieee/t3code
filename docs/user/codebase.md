@@ -1,5 +1,7 @@
 # Explore your codebase
 
+Codebase now opens the [source-derived atlas](codebase-atlas.md). The workflow below describes historical AI-generated maps, which remain available as read-only legacy documentation.
+
 Open **Codebase** in the sidebar to see how a project's systems fit together. The chat header, command palette, and **Open codebase** keybinding lead to the same workspace. The default shortcut is Ctrl+Alt+M (Command+Option+M on macOS). You can explore without creating a conversation.
 
 Check the project, checkout, and branch above the map. Opening from a conversation selects its worktree. Choose another existing checkout to explore that checkout's files. A worktree draft must be provisioned before it can be analyzed.

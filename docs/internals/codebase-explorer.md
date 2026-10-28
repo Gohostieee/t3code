@@ -1,5 +1,7 @@
 # Codebase explorer architecture
 
+The new [Codebase Atlas](codebase-atlas.md) supersedes provider generation in the Codebase destination. This document records the legacy implementation and its historical contracts.
+
 `packages/contracts/src/codebase.ts` defines the portable version-1 manifest and scope graph, source references, bounded analyzer preferences, and durable attempt metadata. `codebaseRpc.ts` defines checkout-scoped operations. The artifact namespace is `<project-root>/.t3-codebase`, including when the project is a repository subdirectory. Provider instance IDs and runtime identifiers are excluded from portable artifacts.
 
 `CodebaseArtifactStore` owns decoding, inventory, source fingerprints, stable identities, source-anchor validation, revision comparisons, and atomic replacement. It inventories tracked and nonignored untracked source, excluding map/runtime/build/dependency artifacts. Text retention and the provider source bundle are bounded separately from node, edge, and serialized-document limits. Freshness compares source/configuration fingerprints; it does not compare the commit hash alone. Large omitted files are hashed as streams rather than by timestamps. Text fingerprints normalize Git checkout line endings; binary fingerprints remain byte-exact, so unchanged clones retain freshness.

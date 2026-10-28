@@ -1639,6 +1639,8 @@ const makeWsRpcLayer = (
             { "rpc.aggregate": "workspace" },
           ),
         [WS_METHODS.codebaseRead]: (input) => codebase.read(input),
+        [WS_METHODS.codebaseAtlas]: (input) => codebase.atlas(input),
+        [WS_METHODS.codebaseAtlasRead]: (input) => codebase.atlas(input),
         [WS_METHODS.codebaseConfigure]: (input) => codebase.configure(input),
         [WS_METHODS.codebaseStart]: (input) => codebase.startAnalysis(input),
         [WS_METHODS.codebaseCancel]: (input) => codebase.cancel(input),

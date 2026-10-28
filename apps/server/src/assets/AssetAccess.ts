@@ -1,4 +1,4 @@
-import type { AssetResource } from "@t3tools/contracts";
+import { CodebaseError, type AssetResource } from "@t3tools/contracts";
 import {
   AssetAttachmentNotFoundError,
   AssetPreviewTypeValidationError,
@@ -61,6 +61,12 @@ const PREVIEW_ASSET_EXTENSIONS = new Set([
 ]);
 
 const AssetClaimsSchema = Schema.Union([
+  Schema.Struct({
+    version: Schema.Literal(1),
+    kind: Schema.Literal("atlas-capture"),
+    fileName: Schema.String.check(Schema.isPattern(/^[a-f0-9]{32}(?:-thumb)?\.png$/)),
+    expiresAt: Schema.Number,
+  }),
   Schema.Struct({
     version: Schema.Literal(1),
     kind: Schema.Literal("workspace-file"),
@@ -400,6 +406,17 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
   const claims = decodeClaims(encodedPayload);
   if (!claims || claims.expiresAt <= (yield* Clock.currentTimeMillis)) return null;
 
+  if (claims.kind === "atlas-capture") {
+    if (decodeRelativePath(relativePath) !== claims.fileName) return null;
+    const config = yield* ServerConfig.ServerConfig;
+    const path = yield* Path.Path;
+    const capturePath = yield* resolveCanonicalWorkspaceFileForRequest({
+      workspaceRoot: path.join(config.stateDir, "codebase-captures"),
+      relativePath: claims.fileName,
+    });
+    return capturePath ? ({ kind: "file", path: capturePath } satisfies ResolvedAsset) : null;
+  }
+
   if (claims.kind === "attachment") {
     const config = yield* ServerConfig.ServerConfig;
     const attachmentPath = resolveAttachmentPathById({
@@ -461,4 +478,22 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
     relativePath: joinedRelativePath,
   });
   return workspaceFile ? ({ kind: "file", path: workspaceFile } satisfies ResolvedAsset) : null;
+});
+
+/** Called only after the Codebase service resolves a capture in the selected project/checkout. */
+export const issueAtlasCaptureUrl = Effect.fn("AssetAccess.issueAtlasCaptureUrl")(function* (
+  id: string,
+  thumbnail: boolean,
+) {
+  if (!/^[a-f0-9]{32}$/.test(id))
+    return yield* new CodebaseError({ code: "invalid", message: "Invalid capture identity." });
+  const secretStore = yield* ServerSecretStore.ServerSecretStore;
+  const secret = yield* secretStore.getOrCreateRandom(SIGNING_SECRET_NAME, 32);
+  const bucket = ASSET_TOKEN_TTL_MS / 2;
+  const expiresAt = (Math.floor((yield* Clock.currentTimeMillis) / bucket) + 2) * bucket;
+  const fileName = `${id}${thumbnail ? "-thumb" : ""}.png`;
+  const payload = base64UrlEncode(
+    encodeAssetClaims({ version: 1, kind: "atlas-capture", fileName, expiresAt }),
+  );
+  return `${ASSET_ROUTE_PREFIX}/${payload}.${signPayload(payload, secret)}/${fileName}`;
 });

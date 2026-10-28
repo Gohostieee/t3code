@@ -22,6 +22,8 @@ type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
  */
 export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.codebaseRead]: AuthOrchestrationReadScope,
+  [WS_METHODS.codebaseAtlasRead]: AuthOrchestrationReadScope,
+  [WS_METHODS.codebaseAtlas]: AuthOrchestrationOperateScope,
   [WS_METHODS.codebaseConfigure]: AuthOrchestrationOperateScope,
   [WS_METHODS.codebaseStart]: AuthOrchestrationOperateScope,
   [WS_METHODS.codebaseCancel]: AuthOrchestrationOperateScope,

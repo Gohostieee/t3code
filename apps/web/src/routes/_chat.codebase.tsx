@@ -1,14 +1,28 @@
 import { useOpenInPreferredEditor } from "../editorPreferences";
+import { CodebaseAtlas } from "../components/codebase/CodebaseAtlas";
 import { AnalysisTranscript } from "../components/codebase/AnalysisTranscript";
-import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
+import { CodebaseFiles } from "../components/codebase/CodebaseFiles";
+import { codebaseGraphLayout } from "../components/codebase/codebaseGraphLayout";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogPanel,
+  DialogTitle,
+} from "../components/ui/dialog";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../components/ui/menu";
+import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../components/ui/popover";
 import { readLocalApi } from "../localApi";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
+  EllipsisIcon,
   GitBranchIcon,
+  InfoIcon,
   LayersIcon,
   NetworkIcon,
   RefreshCwIcon,
@@ -28,6 +42,7 @@ import {
 } from "@t3tools/contracts";
 import {
   codebaseProgressRevision,
+  codebaseExplorationLabel,
   portableCodebaseAnalyzer,
   resolveCodebaseAnalyzer,
 } from "@t3tools/client-runtime/state/codebase";
@@ -40,7 +55,9 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { deriveProviderInstanceEntries, NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
 import { ProviderModelPicker } from "../components/chat/ProviderModelPicker";
 import { Button } from "../components/ui/button";
-import { SidebarInset, SidebarTrigger } from "../components/ui/sidebar";
+import { SidebarInset } from "../components/ui/sidebar";
+import { isElectron } from "../env";
+import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../workspaceTitlebar";
 import { cn, newCommandId } from "../lib/utils";
 
 type Search = { environment?: string; project?: string; checkout?: string; thread?: string };
@@ -55,6 +72,7 @@ export const Route = createFileRoute("/_chat/codebase")({
 });
 
 function CodebaseRoute() {
+  const [legacy, setLegacy] = useState(false);
   const search = Route.useSearch();
   const projects = useProjects();
   const project =
@@ -66,11 +84,31 @@ function CodebaseRoute() {
   return (
     <SidebarInset className="min-w-0 overflow-hidden">
       {project ? (
-        <CodebaseExplorer
-          key={`${project.environmentId}:${project.id}:${search.checkout ?? search.thread ?? "main"}`}
-          project={project}
-          search={search}
-        />
+        legacy ? (
+          <>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="self-start"
+              onClick={() => setLegacy(false)}
+            >
+              Back to source atlas
+            </Button>
+            <CodebaseExplorer
+              key={`${project.environmentId}:${project.id}:${search.checkout ?? search.thread ?? "main"}`}
+              project={project}
+              search={search}
+            />
+          </>
+        ) : (
+          <CodebaseAtlas
+            key={`${project.environmentId}:${project.id}:${search.checkout ?? search.thread ?? "main"}`}
+            project={project}
+            {...(search.checkout ? { checkout: search.checkout } : {})}
+            {...(search.thread ? { thread: search.thread } : {})}
+            onLegacy={() => setLegacy(true)}
+          />
+        )
       ) : (
         <div className="m-auto max-w-md p-8 text-center">
           <NetworkIcon className="mx-auto mb-4 size-8 text-muted-foreground" />
@@ -272,9 +310,11 @@ function SourcePreview({
 function CodebaseExplorer({
   project,
   search,
+  readOnly = true,
 }: {
   project: ReturnType<typeof useProjects>[number];
   search: Search;
+  readOnly?: boolean;
 }) {
   const navigate = useNavigate();
   const projects = useProjects();
@@ -287,10 +327,13 @@ function CodebaseExplorer({
   const scope = history[history.length - 1]!;
   const [selectionByScope, setSelectionByScope] = useState<Record<string, string | null>>({});
   const selectedId = selectionByScope[scope.id] ?? null;
+  const [showInspector, setShowInspector] = useState(false);
   const [override, setOverride] = useState<ModelSelection | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showActivity, setShowActivity] = useState(false);
+  const [showFiles, setShowFiles] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
   const [transcript, setTranscript] = useState<ThreadId | null>(null);
   const [showSetup, setShowSetup] = useState(false);
   const [setupSlot, setSetupSlot] = useState<keyof CodebaseAnalyzers>("default");
@@ -310,10 +353,17 @@ function CodebaseExplorer({
     codebaseEnvironment.read({ ...target, input: { ...target.input, scopeId: scope.id } }),
   );
   const progress = useEnvironmentQuery(codebaseEnvironment.progress(target));
+  const exploration = progress.data?.exploration;
+  const exploring = exploration?.status === "running";
+  const currentRun = progress.data?.runs.find(
+    (run) => run.threadId === exploration?.currentThreadId,
+  );
   const mapRefresh = useRef(map.refresh);
   mapRefresh.current = map.refresh;
   useEffect(() => {
-    if (progress.data) mapRefresh.current();
+    if (progress.data) {
+      mapRefresh.current();
+    }
   }, [codebaseProgressRevision(progress.data), scope.id]);
   useEffect(() => {
     const element = viewport.current;
@@ -325,13 +375,11 @@ function CodebaseExplorer({
   }, [scope.id, map.data?.scope?.scopeId]);
   const chosen = resolveCodebaseAnalyzer({
     analyzers: map.data?.manifest?.analyzers ?? {},
-    passKind: (map.data?.scope?.parentScopeId ?? scope.parent) ? "detail" : "overview",
+    passKind: scope.id === "overview" ? "overview" : "detail",
     providers,
     chatDefault: project.defaultModelSelection,
     binding:
-      map.data?.analyzerBindings?.[
-        (map.data?.scope?.parentScopeId ?? scope.parent) ? "detail" : "overview"
-      ] ??
+      map.data?.analyzerBindings?.[scope.id === "overview" ? "overview" : "detail"] ??
       map.data?.analyzerBindings?.default ??
       progress.data?.runs[0]?.modelSelection,
     override,
@@ -345,6 +393,36 @@ function CodebaseExplorer({
   const active = progress.data?.runs.find(
     (run) => run.analysis.scopeId === scope.id && isCodebaseAnalysisActive(run.analysis.status),
   );
+  const overviewChoice = resolveCodebaseAnalyzer({
+    analyzers: map.data?.manifest?.analyzers ?? {},
+    passKind: "overview",
+    providers,
+    chatDefault: project.defaultModelSelection,
+    binding:
+      map.data?.analyzerBindings?.overview ??
+      map.data?.analyzerBindings?.default ??
+      chosen.selection,
+    override,
+  });
+  const detailChoice = resolveCodebaseAnalyzer({
+    analyzers: map.data?.manifest?.analyzers ?? {},
+    passKind: "detail",
+    providers,
+    chatDefault: project.defaultModelSelection,
+    binding:
+      map.data?.analyzerBindings?.detail ??
+      map.data?.analyzerBindings?.default ??
+      overviewChoice.selection,
+    override,
+  });
+  const explorationReason =
+    overviewChoice.reason ??
+    detailChoice.reason ??
+    (detailChoice.selection &&
+    map.data?.supportedProviderInstanceIds &&
+    !map.data.supportedProviderInstanceIds.includes(detailChoice.selection.instanceId)
+      ? "The detail analyzer cannot enforce inspection permissions. Choose a supported analyzer in AI setup."
+      : null);
   const start = useAtomCommand(codebaseEnvironment.start);
   const cancel = useAtomCommand(codebaseEnvironment.cancel);
   const configure = useAtomCommand(codebaseEnvironment.configure);
@@ -352,39 +430,58 @@ function CodebaseExplorer({
   const node = graph?.nodes.find((entry) => entry.id === selectedId);
   const edge = graph?.edges.find((entry) => entry.id === selectedId);
   const canBuild =
+    !readOnly &&
     !busy &&
     !active &&
+    !exploring &&
     !!chosen.selection &&
     !chosen.reason &&
     !!map.data?.supportedProviderInstanceIds?.includes(chosen.selection.instanceId) &&
     (!map.data || ["ready", "unbuilt"].includes(map.data.state));
-  const choose = (id: string) =>
+  const choose = (id: string) => {
     setSelectionByScope((previous) => ({ ...previous, [scope.id]: id }));
+    setShowInspector(true);
+  };
   const explore = (item: CodebaseNode) => {
     const id = item.boundaryScopeId ?? item.childScopeId;
-    if (id)
+    if (id) {
+      setShowInspector(false);
       setHistory((previous) => [
         ...previous,
         { id, title: item.name, parent: item.boundaryScopeId ? null : scope.id },
       ]);
+    }
   };
-  const build = async () => {
-    if (!chosen.selection) return;
+  const build = async (all = false) => {
+    if (readOnly) return;
+    const model = all ? overviewChoice.selection : chosen.selection;
+    if (!model || (all && !detailChoice.selection)) return;
     setBusy(true);
     setError(null);
     const result = await start({
       ...target,
       input: {
         ...target.input,
-        scopeId: scope.id,
-        parentScopeId: map.data?.scope?.parentScopeId ?? scope.parent,
-        expectedRevision: map.data?.revision ?? null,
+        scopeId: all ? "overview" : scope.id,
+        parentScopeId: all ? null : (map.data?.scope?.parentScopeId ?? scope.parent),
+        expectedRevision: (all ? map.data?.overviewRevision : map.data?.revision) ?? null,
         commandId: newCommandId(),
-        modelSelection: chosen.selection,
+        modelSelection: model,
+        ...(all && detailChoice.selection
+          ? { exploreAll: true, detailModelSelection: detailChoice.selection }
+          : {}),
       },
     });
     if (result._tag === "Failure") setError(String(squashAtomCommandFailure(result)));
     setBusy(false);
+  };
+  const stopExploration = async () => {
+    if (!exploration) return;
+    const result = await cancel({
+      ...target,
+      input: { ...target.input, runThreadId: exploration.rootThreadId },
+    });
+    if (result._tag === "Failure") setError(String(squashAtomCommandFailure(result)));
   };
   const sourceLinks = (sources: ReadonlyArray<CodebaseSource>) =>
     sources.map((item, index) => (
@@ -407,32 +504,28 @@ function CodebaseExplorer({
         .flatMap((thread) => (thread.worktreePath ? [thread.worktreePath] : [])),
     ]),
   ];
+  const freshness = map.data?.scope
+    ? map.data.freshness === "current"
+      ? "Current"
+      : map.data.freshness === "stale"
+        ? "Needs refresh"
+        : "Freshness unknown"
+    : "Not built";
 
   return (
     <div className="relative flex h-full min-h-0 flex-col bg-background">
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b px-5 py-4">
-        <div className="flex items-center gap-3">
-          <SidebarTrigger />
-          <div>
-            <h1 className="text-lg font-semibold tracking-tight">Codebase</h1>
-            <p className="text-xs text-muted-foreground">A shared map of your project.</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setShowActivity(!showActivity)}>
-            <LayersIcon className="size-4" />
-            Analysis activity
-          </Button>
-          <Button variant="ghost" size="sm" render={<Link to="/" />}>
-            Chat
-          </Button>
-        </div>
-      </header>
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b px-5 py-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-3 text-xs">
+      <header
+        className={cn(
+          "flex min-h-[var(--workspace-topbar-height)] shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-2.5 wco:pr-[var(--workspace-native-controls-inset)]",
+          COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+          isElectron && "drag-region",
+        )}
+      >
+        <h1 className="sr-only">Codebase</h1>
+        <div className="flex min-w-0 items-center gap-2 text-xs">
           <select
             aria-label="Codebase project"
-            className="max-w-52 rounded border bg-background px-2 py-1.5"
+            className="h-8 min-w-0 max-w-36 rounded-md border border-transparent bg-background px-2 font-medium hover:border-border focus-visible:outline-primary"
             value={`${project.environmentId}:${project.id}`}
             onChange={(event) => {
               const next = projects.find(
@@ -456,7 +549,7 @@ function CodebaseExplorer({
           </select>
           <select
             aria-label="Codebase checkout"
-            className="max-w-64 rounded border bg-background px-2 py-1.5"
+            className="h-8 min-w-0 max-w-36 rounded-md border border-transparent bg-background px-2 text-muted-foreground hover:border-border focus-visible:outline-primary"
             value={map.data?.checkout ?? search.checkout ?? project.workspaceRoot}
             onChange={(event) =>
               void navigate({
@@ -475,41 +568,33 @@ function CodebaseExplorer({
               </option>
             ))}
           </select>
-          <span className="flex items-center gap-1 text-muted-foreground">
-            <GitBranchIcon className="size-3" />
-            {map.data?.branch ?? map.data?.head?.slice(0, 8) ?? "Resolving checkout…"}
-          </span>
         </div>
-        <span className="text-xs text-muted-foreground">
-          {map.data?.scope
-            ? map.data.freshness === "current"
-              ? "Current"
-              : map.data.freshness === "stale"
-                ? "Needs refresh"
-                : "Freshness unknown"
-            : "Not built"}
-        </span>
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-3">
         <nav
           aria-label="Codebase breadcrumbs"
-          className="flex flex-wrap items-center gap-2 text-xs"
+          className="flex min-w-28 flex-1 items-center gap-1 overflow-x-auto text-xs max-sm:order-last max-sm:basis-full"
         >
           {history.length > 1 && (
             <Button
               variant="ghost"
               size="icon-xs"
               aria-label="Back one scope"
-              onClick={() => setHistory((previous) => previous.slice(0, -1))}
+              onClick={() => {
+                setShowInspector(false);
+                setHistory((previous) => previous.slice(0, -1));
+              }}
             >
               <ArrowLeftIcon />
             </Button>
           )}
           {history.map((entry, index) => (
-            <span key={`${entry.id}:${index}`} className="flex items-center gap-2">
+            <span key={`${entry.id}:${index}`} className="flex shrink-0 items-center gap-2">
               {index > 0 && <span className="text-muted-foreground">/</span>}
               <button
-                onClick={() => setHistory((previous) => previous.slice(0, index + 1))}
+                onClick={() => {
+                  setShowInspector(false);
+                  setHistory((previous) => previous.slice(0, index + 1));
+                }}
+                aria-current={index === history.length - 1 ? "page" : undefined}
                 className={
                   index === history.length - 1
                     ? "font-medium"
@@ -521,41 +606,154 @@ function CodebaseExplorer({
             </span>
           ))}
         </nav>
-        <div className="flex flex-wrap items-center gap-2">
-          <AnalyzerPicker
-            selection={chosen.selection}
-            onChange={setOverride}
-            providers={providers}
-            supported={map.data?.supportedProviderInstanceIds ?? []}
-          />
+        <div className="ml-auto flex min-w-0 items-center gap-1.5">
           <Button
             variant="ghost"
-            size="icon-sm"
-            aria-label="AI setup"
-            onClick={() => {
-              setSetupSelection(chosen.selection);
-              setShowSetup(true);
-            }}
+            size="sm"
+            className="text-xs text-muted-foreground"
+            aria-label={`Map information: ${freshness}`}
+            onClick={() => setShowInfo(true)}
           >
-            <Settings2Icon />
+            <InfoIcon className="size-3.5" />
+            <span className="max-sm:sr-only">{freshness}</span>
           </Button>
-          <Button size="sm" disabled={!canBuild} onClick={() => void build()}>
-            {active
-              ? active.analysis.status
-              : busy
-                ? "Starting…"
-                : graph
-                  ? "Refresh this scope"
-                  : scope.parent
-                    ? "Build this layer"
-                    : "Build overview"}
+          {!readOnly && (
+            <Popover>
+              <PopoverTrigger
+                render={<Button variant="ghost" size="sm" aria-label="Analysis options" />}
+              >
+                <Settings2Icon className="size-3.5" />
+                <span className="max-w-32 truncate max-sm:sr-only">
+                  {chosen.selection?.model ?? "Analyzer"}
+                </span>
+              </PopoverTrigger>
+              <PopoverPopup align="end" className="w-96 max-w-[calc(100vw-2rem)]">
+                <PopoverTitle className="mb-4 text-sm">Analysis options</PopoverTitle>
+                <AnalyzerPicker
+                  selection={chosen.selection}
+                  onChange={setOverride}
+                  providers={providers}
+                  supported={map.data?.supportedProviderInstanceIds ?? []}
+                />
+                {override && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-3"
+                    onClick={() => setOverride(null)}
+                  >
+                    Use saved analyzer
+                  </Button>
+                )}
+              </PopoverPopup>
+            </Popover>
+          )}
+          <Button
+            size="sm"
+            disabled={
+              readOnly ||
+              busy ||
+              !!active ||
+              exploring ||
+              !map.data ||
+              !overviewChoice.selection ||
+              !!overviewChoice.reason ||
+              !!detailChoice.reason ||
+              !!explorationReason ||
+              !["ready", "unbuilt"].includes(map.data.state) ||
+              !map.data.supportedProviderInstanceIds?.includes(overviewChoice.selection.instanceId)
+            }
+            onClick={() => void build(true)}
+          >
+            {busy ? "Starting…" : exploring ? "Exploring…" : "Explore codebase"}
+          </Button>
+          <Menu>
+            <MenuTrigger
+              render={<Button variant="ghost" size="icon-sm" aria-label="Codebase actions" />}
+            >
+              <EllipsisIcon />
+            </MenuTrigger>
+            <MenuPopup align="end">
+              <MenuItem disabled={!canBuild} onClick={() => void build()}>
+                Refresh this scope
+              </MenuItem>
+              <MenuItem onClick={() => setShowFiles(true)}>Files and change impact</MenuItem>
+              <MenuItem onClick={() => setShowActivity(true)}>
+                <LayersIcon />
+                Analysis activity
+              </MenuItem>
+              <MenuItem
+                disabled={readOnly}
+                onClick={() => {
+                  setSetupSelection(chosen.selection);
+                  setShowSetup(true);
+                }}
+              >
+                <Settings2Icon />
+                AI setup
+              </MenuItem>
+              <MenuItem onClick={map.refresh}>
+                <RefreshCwIcon />
+                Check source freshness
+              </MenuItem>
+            </MenuPopup>
+          </Menu>
+          <Button variant="ghost" size="sm" render={<Link to="/" />}>
+            Chat
           </Button>
         </div>
-      </div>
+      </header>
+      {readOnly && (
+        <p className="border-b px-5 py-3 text-xs text-muted-foreground">
+          Legacy AI map · read-only documentation. Use the source atlas to index this checkout.
+        </p>
+      )}
+      {exploration && (
+        <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b px-5 py-3 text-xs">
+          <div role="status" aria-live="polite" className="min-w-0 flex-1 space-y-1">
+            <p className="break-all font-medium">
+              {codebaseExplorationLabel(exploration, currentRun?.analysis)}
+            </p>
+            <p className="text-muted-foreground">
+              {exploration.completedScopes} layers explored · {exploration.discoveredScopes}{" "}
+              discovered · {exploration.inspectedFiles} of {exploration.totalFiles} files fully
+              supplied{exploration.excludedFiles ? ` · ${exploration.excludedFiles} excluded` : ""}
+            </p>
+            <progress
+              aria-label="Readable file coverage"
+              className="h-1.5 w-full max-w-md accent-primary"
+              value={exploration.inspectedFiles}
+              max={Math.max(1, exploration.totalFiles - exploration.excludedFiles)}
+            />
+            {exploration.detail && <p className="text-muted-foreground">{exploration.detail}</p>}
+          </div>
+          <Button variant="ghost" size="xs" onClick={() => setShowActivity(true)}>
+            Activity
+          </Button>
+          <Button variant="ghost" size="xs" onClick={() => setShowFiles(true)}>
+            Files and impact
+          </Button>
+          {exploring && (
+            <Button variant="outline" size="xs" onClick={() => void stopExploration()}>
+              Stop exploration
+            </Button>
+          )}
+        </div>
+      )}
+      {map.data?.index && !exploring && (
+        <button
+          className="border-b px-5 py-2 text-left text-xs text-muted-foreground hover:text-foreground"
+          onClick={() => setShowFiles(true)}
+        >
+          {map.data.index.changedFiles} changed files · {map.data.index.affectedFiles} potentially
+          affected files · {map.data.index.staleScopes} maps need review
+        </button>
+      )}
       {(error ??
         map.error ??
         progress.error ??
         chosen.reason ??
+        explorationReason ??
         supportReason ??
         map.data?.detail) && (
         <div
@@ -567,6 +765,7 @@ function CodebaseExplorer({
               map.error ??
               progress.error ??
               chosen.reason ??
+              explorationReason ??
               supportReason ??
               map.data?.detail}
           </span>
@@ -597,13 +796,14 @@ function CodebaseExplorer({
       <div className="flex min-h-0 flex-1">
         <div
           ref={viewport}
+          tabIndex={-1}
           onScroll={(event) =>
             positions.current.set(scope.id, {
               x: event.currentTarget.scrollLeft,
               y: event.currentTarget.scrollTop,
             })
           }
-          className="relative min-w-0 flex-1 overflow-auto"
+          className="relative min-w-0 flex-1 overflow-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
           style={{
             backgroundImage: "radial-gradient(var(--border) 1px, transparent 1px)",
             backgroundSize: "24px 24px",
@@ -631,261 +831,320 @@ function CodebaseExplorer({
                 <p className="mt-3 text-sm leading-6 text-muted-foreground">
                   {map.data && !["ready", "unbuilt"].includes(map.data.state)
                     ? "Resolve the map file issue and reload to continue."
-                    : "Build one layer at a time. Start with the main systems, then explore the parts you want to understand."}
+                    : "Explore codebase builds the overview, follows every discovered layer, and analyzes remaining source automatically. Browse the maps as they appear."}
                 </p>
                 <p className="mt-4 text-xs text-muted-foreground">
-                  Analysis starts only when you choose Build.
+                  Exploration runs one pass at a time using your analyzer. You can stop and continue
+                  later.
                 </p>
               </div>
             </div>
           )}
         </div>
-        {(node || edge) && (
-          <aside
-            className="w-80 shrink-0 overflow-y-auto border-l bg-background p-5 max-md:absolute max-md:inset-x-0 max-md:bottom-0 max-md:z-10 max-md:max-h-[55%] max-md:w-auto max-md:border-t"
-            aria-label="Codebase inspector"
+      </div>
+      {(node || edge) && (
+        <Dialog
+          open={showInspector}
+          onOpenChange={(open) => {
+            setShowInspector(open);
+            if (!open) setSource(null);
+          }}
+        >
+          <DialogContent
+            className="max-h-[85dvh] max-w-2xl"
+            bottomStickOnMobile={false}
+            finalFocus={() =>
+              [
+                ...(viewport.current?.querySelectorAll<HTMLButtonElement>(
+                  "[data-codebase-selection]",
+                ) ?? []),
+              ].find((element) => element.dataset.codebaseSelection === selectedId) ??
+              viewport.current
+            }
           >
-            <div className="mb-5 flex items-start justify-between gap-2">
-              <div>
-                <p className="mb-2 text-xs text-muted-foreground">
-                  {node?.kind ?? `${edge?.kind} · ${edge?.evidence}`}
-                </p>
-                <h2 className="text-base font-semibold">{node?.name ?? edge?.label}</h2>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label="Close inspector"
-                onClick={() =>
-                  setSelectionByScope((previous) => ({ ...previous, [scope.id]: null }))
-                }
-              >
-                <XIcon />
-              </Button>
-            </div>
-            <p className="text-sm leading-6 text-muted-foreground">
-              {node?.explanation ?? edge?.explanation}
-            </p>
-            {node && (
-              <>
-                <div className="mt-4 flex flex-wrap gap-1.5">
-                  {node.technologies.map((tech) => (
-                    <span className="rounded border px-2 py-0.5 text-xs" key={tech}>
-                      {tech}
-                    </span>
+            <DialogHeader className="pr-14">
+              <p className="text-xs text-muted-foreground">
+                {node?.kind ?? `${edge?.kind} · ${edge?.evidence}`}
+              </p>
+              <DialogTitle className="break-words text-lg leading-snug">
+                {node?.name ?? edge?.label}
+              </DialogTitle>
+            </DialogHeader>
+            <DialogPanel>
+              <DialogDescription className="leading-6">
+                {node?.explanation ?? edge?.explanation}
+              </DialogDescription>
+              {node && (
+                <>
+                  <div className="mt-4 flex flex-wrap gap-1.5">
+                    {node.technologies.map((tech) => (
+                      <span className="rounded border px-2 py-0.5 text-xs" key={tech}>
+                        {tech}
+                      </span>
+                    ))}
+                  </div>
+                  {[
+                    ...[...(node.inputs ?? [])].map((value) => `Input: ${value}`),
+                    ...[...(node.outputs ?? [])].map((value) => `Output: ${value}`),
+                    ...[...(node.sideEffects ?? [])].map((value) => `Effect: ${value}`),
+                  ].map((value) => (
+                    <p className="mt-3 text-xs text-muted-foreground" key={value}>
+                      {value}
+                    </p>
                   ))}
+                  <h3 className="mb-2 mt-6 border-t pt-5 text-xs font-medium">Connections</h3>
+                  {graph?.edges
+                    .filter((item) => item.from === node.id || item.to === node.id)
+                    .map((item) => (
+                      <button
+                        className="block py-2 text-left text-xs text-primary"
+                        key={item.id}
+                        onClick={() => choose(item.id)}
+                      >
+                        {item.from === node.id ? "→" : "←"} {item.label}
+                      </button>
+                    ))}
+                </>
+              )}
+              {edge && (
+                <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+                  <button className="text-primary" onClick={() => choose(edge.from)}>
+                    {graph?.nodes.find((item) => item.id === edge.from)?.name}
+                  </button>
+                  <ArrowRightIcon className="size-3" />
+                  <button className="text-primary" onClick={() => choose(edge.to)}>
+                    {graph?.nodes.find((item) => item.id === edge.to)?.name}
+                  </button>
                 </div>
-                {[
-                  ...[...(node.inputs ?? [])].map((value) => `Input: ${value}`),
-                  ...[...(node.outputs ?? [])].map((value) => `Output: ${value}`),
-                  ...[...(node.sideEffects ?? [])].map((value) => `Effect: ${value}`),
-                ].map((value) => (
-                  <p className="mt-3 text-xs text-muted-foreground" key={value}>
-                    {value}
+              )}
+              <h3 className="mb-2 mt-6 border-t pt-5 text-xs font-medium">Source references</h3>
+              {sourceLinks(node?.sources ?? edge?.sources ?? [])}
+              {node && (node.childScopeId || node.boundaryScopeId) && (
+                <Button className="mt-6 w-full" variant="outline" onClick={() => explore(node)}>
+                  Explore {node.name}
+                  <ArrowRightIcon className="size-4" />
+                </Button>
+              )}
+            </DialogPanel>
+          </DialogContent>
+          {source && map.data && (
+            <SourcePreview
+              environmentId={project.environmentId}
+              checkout={map.data.checkout}
+              source={source}
+              onClose={() => setSource(null)}
+            />
+          )}
+        </Dialog>
+      )}
+      <Dialog open={showInfo} onOpenChange={setShowInfo}>
+        <DialogContent className="max-h-[85dvh] max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Map information</DialogTitle>
+            <DialogDescription>{freshness}</DialogDescription>
+          </DialogHeader>
+          <DialogPanel className="space-y-5 text-sm">
+            <p className="flex items-center gap-2 text-muted-foreground">
+              <GitBranchIcon className="size-4 shrink-0" />
+              <span className="min-w-0 break-all">
+                {map.data?.branch ?? map.data?.head?.slice(0, 8) ?? "Resolving checkout…"}
+              </span>
+            </p>
+            <p className="break-all text-xs text-muted-foreground">
+              {map.data?.checkout ?? search.checkout ?? project.workspaceRoot}
+            </p>
+            {graph && (
+              <>
+                <p className="leading-6 text-muted-foreground">{graph.summary}</p>
+                <section>
+                  <h3 className="mb-2 font-medium">Coverage and omissions</h3>
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    {map.data?.scope?.coverage.referencedFiles} files referenced of{" "}
+                    {map.data?.scope?.coverage.inventoryFiles} inventoried;{" "}
+                    {map.data?.scope?.coverage.omittedFiles} not supplied,{" "}
+                    {map.data?.scope?.coverage.truncatedFiles ?? 0} excerpts truncated.
                   </p>
-                ))}
-                <h3 className="mb-2 mt-6 border-t pt-5 text-xs font-medium">Connections</h3>
-                {graph?.edges
-                  .filter((item) => item.from === node.id || item.to === node.id)
-                  .map((item) => (
-                    <button
-                      className="block py-2 text-left text-xs text-primary"
-                      key={item.id}
-                      onClick={() => choose(item.id)}
-                    >
-                      {item.from === node.id ? "→" : "←"} {item.label}
-                    </button>
-                  ))}
+                  <ul className="mt-3 list-disc space-y-2 pl-5 text-xs leading-5 text-muted-foreground">
+                    {graph.omissions.map((omission) => (
+                      <li key={omission}>{omission}</li>
+                    ))}
+                  </ul>
+                </section>
               </>
             )}
-            {edge && (
-              <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-                <button className="text-primary" onClick={() => choose(edge.from)}>
-                  {graph?.nodes.find((item) => item.id === edge.from)?.name}
-                </button>
-                <ArrowRightIcon className="size-3" />
-                <button className="text-primary" onClick={() => choose(edge.to)}>
-                  {graph?.nodes.find((item) => item.id === edge.to)?.name}
-                </button>
-              </div>
-            )}
-            <h3 className="mb-2 mt-6 border-t pt-5 text-xs font-medium">Source references</h3>
-            {sourceLinks(node?.sources ?? edge?.sources ?? [])}
-            {node && (node.childScopeId || node.boundaryScopeId) && (
-              <Button className="mt-6 w-full" variant="outline" onClick={() => explore(node)}>
-                Explore {node.name}
-                <ArrowRightIcon className="size-4" />
-              </Button>
-            )}
-          </aside>
-        )}
-      </div>
-      <footer className="flex shrink-0 items-center justify-between gap-3 border-t px-5 py-3 text-xs text-muted-foreground">
-        <span>{graph?.summary ?? "Deeper layers are built only when you explore them."}</span>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label="Check source freshness"
-          onClick={map.refresh}
-        >
-          <RefreshCwIcon />
-        </Button>
-      </footer>
-      {graph && (
-        <details className="shrink-0 border-t px-5 py-2 text-xs text-muted-foreground">
-          <summary>
-            Coverage and omissions · {map.data?.scope?.coverage.referencedFiles} files referenced of{" "}
-            {map.data?.scope?.coverage.inventoryFiles} inventoried;{" "}
-            {map.data?.scope?.coverage.omittedFiles} not supplied,{" "}
-            {map.data?.scope?.coverage.truncatedFiles ?? 0} excerpts truncated
-          </summary>
-          <ul className="mt-2 list-disc pl-5">
-            {graph.omissions.map((omission) => (
-              <li key={omission}>{omission}</li>
-            ))}
-          </ul>
-        </details>
-      )}
-      {source && map.data && (
-        <SourcePreview
-          environmentId={project.environmentId}
-          checkout={map.data.checkout}
-          source={source}
-          onClose={() => setSource(null)}
-        />
-      )}
-      {showActivity && (
-        <section
-          className="absolute inset-y-0 right-0 z-20 w-96 max-w-full overflow-auto border-l bg-background p-5 shadow-xl"
-          aria-label="Analysis activity"
-        >
-          <header className="mb-6 flex items-center justify-between">
-            <h2 className="font-semibold">Analysis activity</h2>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Close analysis activity"
-              onClick={() => setShowActivity(false)}
-            >
-              <XIcon />
+            <Button variant="outline" size="sm" onClick={map.refresh}>
+              <RefreshCwIcon className="size-3.5" />
+              Check source freshness
             </Button>
-          </header>
-          {progress.data?.runs.length ? (
-            progress.data.runs.map((run) => (
-              <article className="border-b py-4" key={run.threadId}>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="truncate text-sm font-medium">{run.analysis.scopeId}</span>
-                  <span className="text-xs text-muted-foreground">{run.analysis.status}</span>
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">{run.modelSelection.model}</p>
-                {run.analysis.detail && (
-                  <p className="mt-3 text-xs leading-5">{run.analysis.detail}</p>
-                )}
-                <div className="mt-3 flex gap-2">
-                  <Button variant="outline" size="xs" onClick={() => setTranscript(run.threadId)}>
-                    View transcript
-                  </Button>
-                  {isCodebaseAnalysisActive(run.analysis.status) && (
-                    <Button
-                      variant="ghost"
-                      size="xs"
-                      onClick={() =>
-                        void (async () => {
-                          const result = await cancel({
-                            ...target,
-                            input: { ...target.input, runThreadId: run.threadId },
-                          });
-                          if (result._tag === "Failure")
-                            setError(String(squashAtomCommandFailure(result)));
-                        })()
-                      }
-                    >
-                      Cancel analysis
-                    </Button>
+          </DialogPanel>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={showActivity} onOpenChange={setShowActivity}>
+        <DialogContent className="max-h-[85dvh] max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Analysis activity</DialogTitle>
+          </DialogHeader>
+          <DialogPanel>
+            {progress.data?.runs.length ? (
+              progress.data.runs.map((run) => (
+                <article className="border-b py-4" key={run.threadId}>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="truncate text-sm font-medium">{run.analysis.scopeId}</span>
+                    <span className="text-xs text-muted-foreground">{run.analysis.status}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{run.modelSelection.model}</p>
+                  {run.analysis.detail && (
+                    <p className="mt-3 text-xs leading-5">{run.analysis.detail}</p>
                   )}
-                </div>
-              </article>
-            ))
-          ) : (
-            <p className="text-sm text-muted-foreground">No analysis has run in this checkout.</p>
-          )}
-        </section>
-      )}
-      {transcript && (
-        <AnalysisTranscript
-          threadRef={{ environmentId: project.environmentId, threadId: transcript }}
-          onClose={() => setTranscript(null)}
-        />
-      )}
-      <Dialog open={showSetup} onOpenChange={setShowSetup}>
-        <DialogContent className="max-w-xl">
-          <header className="mb-5 flex items-center justify-between">
-            <DialogTitle>AI setup</DialogTitle>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Close AI setup"
-              onClick={() => setShowSetup(false)}
-            >
-              <XIcon />
-            </Button>
-          </header>
-          <p className="mb-5 text-sm text-muted-foreground">
-            Choose the analyzer for this project. Overview and detail overrides inherit the default
-            when unset.
-          </p>
-          <label className="mb-4 flex items-center gap-3 text-sm">
-            Applies to
-            <select
-              className="rounded border bg-background p-2"
-              value={setupSlot}
-              onChange={(event) => {
-                const slot = event.target.value as keyof CodebaseAnalyzers;
-                setSetupSlot(slot);
-                setSetupSelection(
-                  resolveCodebaseAnalyzer({
-                    analyzers: {
-                      default:
-                        map.data?.manifest?.analyzers[slot] ??
-                        map.data?.manifest?.analyzers.default,
-                    },
-                    passKind: "overview",
-                    providers,
-                    chatDefault: project.defaultModelSelection,
-                    binding: chosen.selection,
-                  }).selection,
-                );
-              }}
-            >
-              <option value="default">Default analyzer</option>
-              <option value="overview">Overview passes</option>
-              <option value="detail">Detail passes</option>
-            </select>
-          </label>
-          <AnalyzerPicker
-            selection={setupSelection}
-            onChange={setSetupSelection}
-            providers={providers}
-            supported={map.data?.supportedProviderInstanceIds ?? []}
+                  <div className="mt-3 flex gap-2">
+                    <Button variant="outline" size="xs" onClick={() => setTranscript(run.threadId)}>
+                      View transcript
+                    </Button>
+                    {isCodebaseAnalysisActive(run.analysis.status) && (
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        onClick={() =>
+                          void (async () => {
+                            const result = await cancel({
+                              ...target,
+                              input: { ...target.input, runThreadId: run.threadId },
+                            });
+                            if (result._tag === "Failure")
+                              setError(String(squashAtomCommandFailure(result)));
+                          })()
+                        }
+                      >
+                        Cancel analysis
+                      </Button>
+                    )}
+                  </div>
+                </article>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No analysis has run in this checkout.</p>
+            )}
+          </DialogPanel>
+        </DialogContent>
+        {transcript && (
+          <AnalysisTranscript
+            threadRef={{ environmentId: project.environmentId, threadId: transcript }}
+            onClose={() => setTranscript(null)}
           />
-          <div className="mt-6 flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setShowSetup(false)}>
-              Discard
-            </Button>
-            {setupSlot !== "default" && (
+        )}
+      </Dialog>
+      <Dialog open={showFiles} onOpenChange={setShowFiles}>
+        <DialogContent className="max-h-[85dvh] max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Files and change impact</DialogTitle>
+          </DialogHeader>
+          <DialogPanel>
+            {showFiles && (
+              <CodebaseFiles
+                environmentId={project.environmentId}
+                input={target.input}
+                revision={codebaseProgressRevision(progress.data)}
+                onOpenScope={(id, title) => {
+                  setShowFiles(false);
+                  setShowInspector(false);
+                  setHistory((previous) => [...previous, { id, title, parent: null }]);
+                }}
+              />
+            )}
+          </DialogPanel>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={showSetup} onOpenChange={setShowSetup}>
+        <DialogContent className="max-h-[85dvh] max-w-xl">
+          <DialogHeader>
+            <DialogTitle>AI setup</DialogTitle>
+            <DialogDescription>
+              Choose the analyzer for this project. Overview and detail overrides inherit the
+              default when unset.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogPanel>
+            <label className="mb-4 flex items-center gap-3 text-sm">
+              Applies to
+              <select
+                className="rounded border bg-background p-2"
+                value={setupSlot}
+                onChange={(event) => {
+                  const slot = event.target.value as keyof CodebaseAnalyzers;
+                  setSetupSlot(slot);
+                  setSetupSelection(
+                    resolveCodebaseAnalyzer({
+                      analyzers: {
+                        default:
+                          map.data?.manifest?.analyzers[slot] ??
+                          map.data?.manifest?.analyzers.default,
+                      },
+                      passKind: "overview",
+                      providers,
+                      chatDefault: project.defaultModelSelection,
+                      binding: chosen.selection,
+                    }).selection,
+                  );
+                }}
+              >
+                <option value="default">Default analyzer</option>
+                <option value="overview">Overview passes</option>
+                <option value="detail">Detail passes</option>
+              </select>
+            </label>
+            <AnalyzerPicker
+              selection={setupSelection}
+              onChange={setSetupSelection}
+              providers={providers}
+              supported={map.data?.supportedProviderInstanceIds ?? []}
+            />
+            <div className="mt-6 flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setShowSetup(false)}>
+                Discard
+              </Button>
+              {setupSlot !== "default" && (
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    void (async () => {
+                      const analyzers = { ...map.data?.manifest?.analyzers };
+                      delete analyzers[setupSlot];
+                      const result = await configure({
+                        ...target,
+                        input: {
+                          ...target.input,
+                          expectedRevision: map.data?.configurationRevision ?? null,
+                          analyzers,
+                          analyzerBindings: { [setupSlot]: null },
+                        },
+                      });
+                      if (result._tag === "Failure")
+                        setError(String(squashAtomCommandFailure(result)));
+                      else {
+                        setShowSetup(false);
+                        setOverride(null);
+                        map.refresh();
+                      }
+                    })()
+                  }
+                >
+                  Use default
+                </Button>
+              )}
               <Button
-                variant="outline"
+                disabled={!setupSelection}
                 onClick={() =>
                   void (async () => {
-                    const analyzers = { ...map.data?.manifest?.analyzers };
-                    delete analyzers[setupSlot];
+                    if (!setupSelection) return;
+                    const preference = portableCodebaseAnalyzer(setupSelection, providers);
+                    if (!preference) return;
                     const result = await configure({
                       ...target,
                       input: {
                         ...target.input,
                         expectedRevision: map.data?.configurationRevision ?? null,
-                        analyzers,
-                        analyzerBindings: { [setupSlot]: null },
+                        analyzers: { ...map.data?.manifest?.analyzers, [setupSlot]: preference },
+                        analyzerBindings: { [setupSlot]: setupSelection },
                       },
                     });
                     if (result._tag === "Failure")
@@ -898,37 +1157,10 @@ function CodebaseExplorer({
                   })()
                 }
               >
-                Use default
+                Save
               </Button>
-            )}
-            <Button
-              disabled={!setupSelection}
-              onClick={() =>
-                void (async () => {
-                  if (!setupSelection) return;
-                  const preference = portableCodebaseAnalyzer(setupSelection, providers);
-                  if (!preference) return;
-                  const result = await configure({
-                    ...target,
-                    input: {
-                      ...target.input,
-                      expectedRevision: map.data?.configurationRevision ?? null,
-                      analyzers: { ...map.data?.manifest?.analyzers, [setupSlot]: preference },
-                      analyzerBindings: { [setupSlot]: setupSelection },
-                    },
-                  });
-                  if (result._tag === "Failure") setError(String(squashAtomCommandFailure(result)));
-                  else {
-                    setShowSetup(false);
-                    setOverride(null);
-                    map.refresh();
-                  }
-                })()
-              }
-            >
-              Save
-            </Button>
-          </div>
+            </div>
+          </DialogPanel>
         </DialogContent>
       </Dialog>
     </div>
@@ -948,30 +1180,31 @@ function CodebaseGraphView({
   onSelect: (id: string) => void;
   onExplore: (node: CodebaseNode) => void;
 }) {
-  const layout = useMemo(() => {
-    const incoming = new Set(edges.map((edge) => edge.to));
-    const outgoing = new Set(edges.map((edge) => edge.from));
-    const columns = [
-      nodes.filter((node) => !incoming.has(node.id)),
-      nodes.filter((node) => incoming.has(node.id) && outgoing.has(node.id)),
-      nodes.filter((node) => incoming.has(node.id) && !outgoing.has(node.id)),
-    ].filter((column) => column.length);
-    const height = Math.max(520, ...columns.map((column) => column.length * 184 + 80));
-    return {
-      width: Math.max(700, columns.length * 310 + 40),
-      height,
-      nodes: columns.flatMap((column, x) =>
-        column.map((node, y) => ({
-          node,
-          x: 32 + x * 310,
-          y: 40 + y * ((height - 80) / column.length),
-        })),
-      ),
+  const canvas = useRef<HTMLDivElement>(null);
+  const [viewport, setViewport] = useState({ width: 0, height: 0 });
+  useLayoutEffect(() => {
+    const element = canvas.current?.parentElement;
+    if (!element) return;
+    const measure = () => {
+      const width = element.clientWidth;
+      const height = element.clientHeight;
+      setViewport((previous) =>
+        previous.width === width && previous.height === height ? previous : { width, height },
+      );
     };
-  }, [nodes, edges]);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  const layout = useMemo(
+    () => codebaseGraphLayout(nodes, edges, viewport),
+    [nodes, edges, viewport],
+  );
   const byId = new Map(layout.nodes.map((item) => [item.node.id, item]));
   return (
     <div
+      ref={canvas}
       className="relative"
       style={{ width: layout.width, height: layout.height }}
       aria-label="Architecture map"
@@ -998,10 +1231,10 @@ function CodebaseGraphView({
           const from = byId.get(edge.from),
             to = byId.get(edge.to);
           if (!from || !to) return null;
-          const x1 = from.x + 236,
-            y1 = from.y + 65,
+          const x1 = from.x + layout.nodeWidth,
+            y1 = from.y + layout.nodeHeight / 2,
             x2 = to.x,
-            y2 = to.y + 65;
+            y2 = to.y + layout.nodeHeight / 2;
           const path = `M${x1},${y1} C${x1 + 65},${y1} ${x2 - 65},${y2} ${x2},${y2}`;
           return (
             <g
@@ -1026,6 +1259,7 @@ function CodebaseGraphView({
               />
               <foreignObject x={(x1 + x2) / 2 - 48} y={(y1 + y2) / 2 - 10} width="96" height="28">
                 <button
+                  data-codebase-selection={edge.id}
                   className="w-full truncate rounded border border-border bg-background px-1.5 py-1 text-[10px] text-muted-foreground hover:text-foreground"
                   title={edge.label}
                   onClick={() => onSelect(edge.id)}
@@ -1041,16 +1275,19 @@ function CodebaseGraphView({
         <article
           key={node.id}
           className={cn(
-            "absolute w-[236px] rounded-lg border bg-card shadow-sm",
+            "absolute flex flex-col rounded-lg border bg-card shadow-sm",
             selectedId === node.id ? "border-primary ring-2 ring-primary/20" : "border-border",
           )}
-          style={{ left: x, top: y }}
-          onDoubleClick={() => onExplore(node)}
+          style={{ left: x, top: y, width: layout.nodeWidth, height: layout.nodeHeight }}
           onContextMenu={(event) => {
             event.preventDefault();
-            onSelect(node.id);
-            void readLocalApi()
-              ?.contextMenu.show(
+            const api = readLocalApi();
+            if (!api) {
+              onSelect(node.id);
+              return;
+            }
+            void api.contextMenu
+              .show(
                 [
                   { id: "inspect", label: "Inspect" },
                   ...(node.childScopeId || node.boundaryScopeId
@@ -1060,12 +1297,14 @@ function CodebaseGraphView({
                 { x: event.clientX, y: event.clientY },
               )
               .then((action) => {
+                if (action === "inspect") onSelect(node.id);
                 if (action === "explore") onExplore(node);
               });
           }}
         >
           <button
-            className="block w-full rounded-t-lg p-4 text-left focus-visible:outline-2 focus-visible:outline-primary"
+            data-codebase-selection={node.id}
+            className="block min-h-0 w-full flex-1 rounded-t-lg p-4 text-left focus-visible:outline-2 focus-visible:outline-primary"
             onClick={() => onSelect(node.id)}
             aria-pressed={selectedId === node.id}
           >
@@ -1077,7 +1316,7 @@ function CodebaseGraphView({
               {node.responsibility}
             </p>
           </button>
-          <div className="flex items-center justify-between border-t px-4 py-2 text-[11px] text-muted-foreground">
+          <div className="flex shrink-0 items-center justify-between border-t px-4 py-2 text-[11px] text-muted-foreground">
             <span>{node.childScopeId ? "Expand on demand" : "Overview"}</span>
             {(node.childScopeId || node.boundaryScopeId) && (
               <button

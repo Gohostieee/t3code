@@ -5,6 +5,8 @@ import {
   type CodebaseAnalyzer,
   type ModelSelection,
   type ServerProvider,
+  type CodebaseExploration,
+  type CodebaseAnalysis,
 } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
@@ -14,6 +16,33 @@ import {
   createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
 } from "./runtime.ts";
+
+export function codebaseExplorationLabel(
+  exploration: CodebaseExploration,
+  analysis?: CodebaseAnalysis,
+) {
+  if (exploration.status === "running") {
+    const phase =
+      analysis?.status === "waiting"
+        ? "Waiting for input"
+        : analysis?.status === "validating"
+          ? "Validating map"
+          : analysis?.status === "saving"
+            ? "Saving map"
+            : analysis?.status === "running"
+              ? "Analyzing"
+              : "Preparing";
+    return `${phase}: ${exploration.currentLabel}`;
+  }
+  return {
+    completed: "Exploration complete",
+    failed: "Exploration failed",
+    cancelled: "Exploration stopped",
+    "input-changed": "Source changed; exploration stopped",
+    interrupted: "Exploration interrupted",
+    incomplete: "Exploration incomplete",
+  }[exploration.status];
+}
 
 /** Portable defaults select a model; an environment-local binding selects its account. */
 export function resolveCodebaseAnalyzer(input: {
@@ -99,6 +128,21 @@ export function createCodebaseEnvironmentAtoms<R, E>(
 ) {
   const scheduler = createAtomCommandScheduler();
   return {
+    atlas: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "codebase:atlas",
+      tag: WS_METHODS.codebaseAtlasRead,
+      staleTimeMs: 0,
+    }),
+    atlasCommand: createEnvironmentRpcCommand(runtime, {
+      label: "codebase:atlas-command",
+      tag: WS_METHODS.codebaseAtlas,
+      scheduler,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) =>
+          `${environmentId}:${input.projectId}:${input.checkout ?? input.threadId ?? "main"}:${input.appRoot ?? "default"}:${input.action.type}`,
+      },
+    }),
     read: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "codebase:read",
       tag: WS_METHODS.codebaseRead,

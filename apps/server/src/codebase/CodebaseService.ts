@@ -1,4 +1,6 @@
 import { buildCodebaseInput, isExcludedCodebaseSource } from "./CodebaseInput.ts";
+import { makeCodebaseAtlas } from "./CodebaseAtlas.ts";
+import type { CodebaseAtlasInput, CodebaseAtlasSnapshot } from "@t3tools/contracts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFSP from "node:fs/promises";
 import * as NodeFS from "node:fs";
@@ -73,6 +75,9 @@ export class CodebaseService extends Context.Service<
   CodebaseService,
   {
     readonly read: (input: CodebaseReadInput) => Effect.Effect<CodebaseSnapshot, CodebaseError>;
+    readonly atlas: (
+      input: CodebaseAtlasInput,
+    ) => Effect.Effect<CodebaseAtlasSnapshot, CodebaseError>;
     readonly configure: (
       input: CodebaseConfigureInput,
     ) => Effect.Effect<CodebaseSnapshot, CodebaseError>;
@@ -146,6 +151,7 @@ export class CodebaseService extends Context.Service<
         );
       });
 
+      const atlas = yield* makeCodebaseAtlas(resolve, changes);
       const runs = Effect.fn("CodebaseService.runs")(function* (checkout?: string) {
         const rows = yield* (
           checkout
@@ -641,7 +647,13 @@ export class CodebaseService extends Context.Service<
       });
       const status = Effect.fn("CodebaseService.status")(function* (input: CodebaseCheckoutInput) {
         const checkout = yield* resolve(input);
-        return { checkout, runs: yield* runs(checkout), artifactsChanged: false };
+        return {
+          checkout,
+          runs: yield* runs(checkout),
+          artifactsChanged: false,
+          atlasRevision: yield* atlas.token(checkout),
+          atlasJobs: yield* atlas.jobs(checkout),
+        };
       });
       const subscribe = Effect.fn("CodebaseService.subscribe")(function* (
         input: CodebaseCheckoutInput,
@@ -696,14 +708,16 @@ export class CodebaseService extends Context.Service<
           (watcher) => Effect.sync(() => watcher.close()),
         );
         const progress = () =>
-          runs(checkout).pipe(
-            Effect.map((entries) => ({
+          Effect.gen(function* () {
+            return {
               checkout,
-              runs: entries,
+              runs: yield* runs(checkout),
               artifactsChanged: false,
               diskRevision,
-            })),
-          );
+              atlasRevision: yield* atlas.token(checkout),
+              atlasJobs: yield* atlas.jobs(checkout),
+            };
+          });
         return Stream.concat(
           Stream.fromEffect(progress()),
           Stream.merge(
@@ -721,6 +735,7 @@ export class CodebaseService extends Context.Service<
         );
       });
       const start = Effect.fn("CodebaseService.start")(function* () {
+        yield* atlas.start().pipe(Effect.catch(Effect.logWarning));
         yield* Stream.runForEach(engine.streamDomainEvents, (event) =>
           Effect.gen(function* () {
             if (event.aggregateKind !== "thread") return;
@@ -789,13 +804,14 @@ export class CodebaseService extends Context.Service<
       });
       return {
         read,
+        atlas: atlas.execute,
         configure,
         startAnalysis,
         cancel,
         status,
         subscribe,
         start,
-        drain: worker.drain,
+        drain: Effect.all([worker.drain, atlas.drain]).pipe(Effect.asVoid),
       };
     }),
   );

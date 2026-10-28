@@ -1,3 +1,5 @@
+import Migration0038 from "./Migrations/038_CodebaseExplorations.ts";
+import Migration0039 from "./Migrations/039_CodebaseAtlas.ts";
 import Migration0037 from "./Migrations/037_CodebaseAnalyzerBindings.ts";
 import Migration0036 from "./Migrations/036_CodebaseAnalysis.ts";
 /**
@@ -99,6 +101,8 @@ export const migrationEntries = [
   [35, "ProjectionThreadTitleRegeneration", Migration0035],
   [36, "CodebaseAnalysis", Migration0036],
   [37, "CodebaseAnalyzerBindings", Migration0037],
+  [38, "CodebaseExplorations", Migration0038],
+  [39, "CodebaseAtlas", Migration0039],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>

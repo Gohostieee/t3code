@@ -1,5 +1,16 @@
 import { createSourceFingerprint } from "./CodebaseFingerprint.ts";
 import {
+  CodebaseIndex,
+  emptyCodebaseIndex,
+  updateCodebaseIndex,
+  codebaseDependencies,
+  codebaseModuleReferences,
+  codebaseWorkspacePackage,
+  codebaseIndexReport,
+  isIndexedScopeCurrent,
+  type IndexedFile,
+} from "./CodebaseIndex.ts";
+import {
   buildCodebaseInput,
   codebaseSourcePriority,
   isExcludedCodebaseSource,
@@ -22,6 +33,7 @@ import {
   type CodebaseSnapshot,
   type CodebaseSource,
   type CodebaseNode,
+  type CodebaseSourceRange,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -36,8 +48,12 @@ const digest = (value: string | Buffer) =>
   NodeCrypto.createHash("sha256").update(value).digest("hex");
 async function sourceFileDigest(path: string) {
   const hash = createSourceFingerprint();
-  for await (const chunk of NodeFS.createReadStream(path)) hash.update(chunk);
-  return hash.digest();
+  const raw = NodeCrypto.createHash("sha256");
+  for await (const chunk of NodeFS.createReadStream(path)) {
+    hash.update(chunk);
+    raw.update(chunk);
+  }
+  return { fingerprint: hash.digest(), sha256: raw.digest("hex") };
 }
 const error = (code: CodebaseError["code"], message: string) =>
   new CodebaseError({ code, message });
@@ -63,7 +79,8 @@ export interface CodebaseBinding {
   readonly gitBranch: string | null;
   readonly projectPath: string;
   readonly configurationFingerprint: string;
-  readonly inventory: ReadonlyArray<{ path: string; fingerprint: string; text: string | null }>;
+  readonly inventory: ReadonlyArray<IndexedFile & { text: string | null }>;
+  readonly sourceRange?: CodebaseSourceRange;
   readonly omittedFiles: number;
   readonly focus: CodebaseNode | null;
   readonly previousScope: CodebaseScope | null;
@@ -111,17 +128,18 @@ async function safePath(
   return current;
 }
 
-async function readText(checkout: string, relative: string) {
+async function readText(
+  checkout: string,
+  relative: string,
+  limit: number = CODEBASE_LIMITS.documentBytes,
+) {
   const path = await safePath(checkout, relative);
   try {
     const handle = await NodeFSP.open(path, "r");
     try {
       const stat = await handle.stat();
-      if (!stat.isFile() || stat.size > CODEBASE_LIMITS.documentBytes)
-        throw error(
-          "invalid",
-          `Map file exceeds the ${CODEBASE_LIMITS.documentBytes}-byte limit: ${relative}`,
-        );
+      if (!stat.isFile() || stat.size > limit)
+        throw error("invalid", `Map file exceeds the ${limit}-byte limit: ${relative}`);
       return await handle.readFile("utf8");
     } finally {
       await handle.close();
@@ -136,6 +154,7 @@ const scopeFile = (scopeId: string) => {
   return `${CODEBASE_DIRECTORY}/scopes/${scopeId}.json`;
 };
 const manifestFile = `${CODEBASE_DIRECTORY}/manifest.json`;
+const indexFile = `${CODEBASE_DIRECTORY}/index.json`;
 const revision = (text: string | null) => (text === null ? null : digest(text));
 const decodeVersionEnvelope = Schema.decodeUnknownSync(
   Schema.fromJsonString(Schema.Struct({ version: Schema.optional(Schema.Number) })),
@@ -185,12 +204,22 @@ export class CodebaseArtifactStore extends Context.Service<
     readonly read: (input: {
       checkout: string;
       scopeId: string;
+      fileQuery?: string;
+      fileOffset?: number;
+      changedFilesOnly?: boolean;
     }) => Effect.Effect<CodebaseSnapshot, CodebaseError>;
     readonly prepare: (input: {
       checkout: string;
       scopeId: string;
       parentScopeId: string | null;
+      sourceOnly?: boolean;
+      sourceRange?: CodebaseSourceRange;
     }) => Effect.Effect<CodebaseBinding, CodebaseError>;
+    readonly catalog: (binding: CodebaseBinding) => Effect.Effect<CodebaseIndex, CodebaseError>;
+    readonly loadScope: (
+      checkout: string,
+      scopeId: string,
+    ) => Effect.Effect<CodebaseScope | null, CodebaseError>;
     readonly validate: (
       binding: CodebaseBinding,
       output: string,
@@ -227,6 +256,8 @@ export class CodebaseArtifactStore extends Context.Service<
         checkout: string;
         scopeId: string;
         parentScopeId: string | null;
+        sourceOnly?: boolean;
+        sourceRange?: CodebaseSourceRange;
       }) {
         const checkout = yield* io(() => NodeFSP.realpath(input.checkout));
         const root = (yield* git(checkout, ["rev-parse", "--show-toplevel"])).stdout.trim();
@@ -255,14 +286,29 @@ export class CodebaseArtifactStore extends Context.Service<
             "unsupported",
             "This project exceeds the 20,000 source-file inventory limit. Select a smaller project root.",
           );
+        const indexText = input.sourceOnly
+          ? null
+          : yield* io(() => readText(checkout, indexFile, CODEBASE_LIMITS.indexBytes));
+        const index =
+          indexText === null
+            ? emptyCodebaseIndex()
+            : yield* io(async () => decode(CodebaseIndex, indexText));
+        const knownPaths = [
+          ...new Set([
+            ...files,
+            ...index.files.map((file) => file.path),
+            ...index.scopes.flatMap((scope) => scope.inputs.map((input) => input.path)),
+          ]),
+        ];
         const focusText = input.parentScopeId
           ? yield* io(() => readText(checkout, scopeFile(input.parentScopeId!)))
           : null;
         const focus = focusText ? yield* io(async () => decode(CodebaseScope, focusText)) : null;
-        const focusPaths =
-          focus?.graph.nodes
-            .find((node) => node.childScopeId === input.scopeId)
-            ?.sources.map((source) => source.path) ?? [];
+        const focusPaths = input.sourceRange
+          ? [input.sourceRange.path]
+          : (focus?.graph.nodes
+              .find((node) => node.childScopeId === input.scopeId)
+              ?.sources.map((source) => source.path) ?? []);
         files.sort(
           (a, b) =>
             codebaseSourcePriority(a, focusPaths) - codebaseSourcePriority(b, focusPaths) ||
@@ -271,7 +317,9 @@ export class CodebaseArtifactStore extends Context.Service<
         const inventory = yield* io(async () => {
           let retainedBytes = 0;
           const checkedParents = new Set<string>();
-          const items: Array<{ path: string; fingerprint: string; text: string | null }> = [];
+          const items: Array<IndexedFile & { text: string | null }> = [];
+          const references = new Map<string, readonly string[]>();
+          const packages: Array<NonNullable<ReturnType<typeof codebaseWorkspacePackage>>> = [];
           for (let offset = 0; offset < files.length; offset += 8) {
             const batch = await Promise.all(
               files.slice(offset, offset + 8).map(async (path) => {
@@ -284,41 +332,98 @@ export class CodebaseArtifactStore extends Context.Service<
                     path,
                     fingerprint: `symlink:${await NodeFSP.readlink(NodePath.join(checkout, path)).catch(() => "unavailable")}`,
                     text: null,
+                    sha256: null,
+                    lines: 0,
+                    exclusion: "symbolic link",
+                    dependsOn: [],
                   };
                 }
                 const stat = await NodeFSP.stat(absolute).catch((cause) => {
                   if (isMissing(cause)) return null;
                   throw cause;
                 });
-                if (!stat) return { path, fingerprint: "deleted", text: null };
-                if (!stat.isFile()) return { path, fingerprint: "not-file", text: null };
+                if (!stat)
+                  return {
+                    path,
+                    fingerprint: "deleted",
+                    text: null,
+                    sha256: null,
+                    lines: 0,
+                    exclusion: "deleted",
+                    dependsOn: [],
+                  };
+                if (!stat.isFile())
+                  return {
+                    path,
+                    fingerprint: "not-file",
+                    text: null,
+                    sha256: null,
+                    lines: 0,
+                    exclusion: "not a regular file",
+                    dependsOn: [],
+                  };
                 if (stat.size > CODEBASE_LIMITS.sourceFileBytes)
-                  return { path, fingerprint: await sourceFileDigest(absolute), text: null };
+                  return {
+                    path,
+                    ...(await sourceFileDigest(absolute)),
+                    text: null,
+                    lines: 0,
+                    exclusion: "exceeds 1 MiB source limit",
+                    dependsOn: [],
+                  };
                 const content = await NodeFSP.readFile(absolute);
                 const hash = createSourceFingerprint();
                 hash.update(content);
+                const binary =
+                  content.includes(0) ||
+                  /\.(png|jpe?g|gif|webp|ico|pdf|woff2?|ttf|mp[34]|zip)$/i.test(path);
                 return {
                   path,
                   fingerprint: hash.digest(),
-                  text: content.includes(0) ? null : content.toString("utf8"),
+                  text: binary ? null : content.toString("utf8"),
+                  sha256: digest(content),
+                  lines: content.length ? content.toString("utf8").split("\n").length : 0,
+                  exclusion: binary ? "binary" : content.length === 0 ? "empty" : null,
+                  dependsOn: [],
                 };
               }),
             );
             for (const item of batch) {
+              if (!input.sourceOnly) {
+                references.set(item.path, codebaseModuleReferences(item));
+                const pkg = codebaseWorkspacePackage(item);
+                if (pkg) packages.push(pkg);
+              }
               const bytes = item.text === null ? 0 : Buffer.byteLength(item.text);
               const retain = retainedBytes + bytes <= 8 * 1024 * 1024;
-              items.push({ ...item, text: retain ? item.text : null });
+              items.push({
+                ...item,
+                text: retain ? item.text : null,
+              });
               if (retain) retainedBytes += bytes;
             }
           }
-          return items.sort((a, b) => a.path.localeCompare(b.path));
+          const dependencies = input.sourceOnly
+            ? new Map<string, readonly string[]>()
+            : codebaseDependencies(items, knownPaths, { references, packages });
+          return items
+            .filter((file) => file.exclusion !== "deleted")
+            .map((file) => ({
+              ...file,
+              dependsOn: dependencies.get(file.path) ?? [],
+            }))
+            .sort((a, b) => a.path.localeCompare(b.path));
         });
-        const manifestText = yield* io(() => readText(checkout, manifestFile));
+        const manifestText = input.sourceOnly
+          ? null
+          : yield* io(() => readText(checkout, manifestFile));
         const manifest =
           manifestText === null
             ? null
             : yield* io(async () => decode(CodebaseManifest, manifestText));
-        const scopeText = yield* io(() => readText(checkout, scopeFile(input.scopeId)));
+        const scopeText = input.sourceOnly
+          ? null
+          : yield* io(() => readText(checkout, scopeFile(input.scopeId)));
         const previousScope =
           scopeText !== null ? yield* io(async () => decode(CodebaseScope, scopeText)) : null;
         const parentText =
@@ -348,6 +453,7 @@ export class CodebaseArtifactStore extends Context.Service<
           projectPath: NodePath.relative(root, checkout).replaceAll("\\", "/") || ".",
           configurationFingerprint: digest(serialize(manifest?.analyzers ?? {})),
           inventory,
+          ...(input.sourceRange ? { sourceRange: input.sourceRange } : {}),
           previousScope,
           parentNodes: focus?.graph.nodes ?? [],
           previousNodes: previousScope?.graph.nodes ?? [],
@@ -356,9 +462,25 @@ export class CodebaseArtifactStore extends Context.Service<
         } satisfies CodebaseBinding;
       });
 
+      const loadScope = (checkout: string, scopeId: string) =>
+        io(async () => {
+          const text = await readText(checkout, scopeFile(scopeId));
+          return text === null ? null : decode(CodebaseScope, text);
+        });
+      const catalog = (binding: CodebaseBinding) =>
+        io(async () => {
+          const text = await readText(binding.checkout, indexFile, CODEBASE_LIMITS.indexBytes);
+          const index = text === null ? emptyCodebaseIndex() : decode(CodebaseIndex, text);
+          // Old portable maps gain coverage metadata as they are refreshed.
+          return index;
+        });
+
       const read = Effect.fn("CodebaseArtifactStore.read")(function* (input: {
         checkout: string;
         scopeId: string;
+        fileQuery?: string;
+        fileOffset?: number;
+        changedFilesOnly?: boolean;
       }) {
         const base: CodebaseSnapshot = {
           checkout: input.checkout,
@@ -381,6 +503,10 @@ export class CodebaseArtifactStore extends Context.Service<
             ...base,
             checkout,
             revision: revision(text),
+            overviewRevision:
+              input.scopeId === "overview"
+                ? revision(text)
+                : revision(yield* io(() => readText(checkout, scopeFile("overview")))),
             configurationRevision: revision(manifestText),
           };
           if ([text, manifestText].some((value) => value?.includes("<<<<<<<")))
@@ -396,7 +522,7 @@ export class CodebaseArtifactStore extends Context.Service<
           const scope = text === null ? null : yield* io(async () => decode(CodebaseScope, text));
           if (scope && scope.scopeId !== input.scopeId)
             return yield* error("invalid", "Scope identity does not match its filename.");
-          if (!scope) {
+          if (!scope && input.scopeId !== "overview") {
             const head = (yield* git(checkout, ["rev-parse", "HEAD"])).stdout.trim();
             const branch =
               (yield* git(
@@ -422,6 +548,17 @@ export class CodebaseArtifactStore extends Context.Service<
               detail: prepared.failure.message,
             };
           const binding = prepared.success;
+          const index = yield* catalog(binding);
+          const report = codebaseIndexReport(
+            index,
+            binding.inventory,
+            binding.configurationFingerprint,
+            binding.sourceFingerprint,
+            input.fileQuery,
+            input.fileOffset,
+            input.changedFilesOnly,
+          );
+          const indexed = index.scopes.find((entry) => entry.scopeId === input.scopeId);
           const ignored =
             (yield* git(
               checkout,
@@ -435,10 +572,20 @@ export class CodebaseArtifactStore extends Context.Service<
             branch: binding.gitBranch,
             head: binding.gitHead,
             ignored,
+            index: report,
             state: scope ? ("ready" as const) : ("unbuilt" as const),
             freshness: scope
-              ? scope.sourceFingerprint === binding.sourceFingerprint &&
-                scope.configurationFingerprint === binding.configurationFingerprint
+              ? (
+                  indexed
+                    ? isIndexedScopeCurrent(
+                        indexed,
+                        new Map(binding.inventory.map((file) => [file.path, file])),
+                        binding.configurationFingerprint,
+                        binding.sourceFingerprint,
+                      )
+                    : scope.sourceFingerprint === binding.sourceFingerprint &&
+                      scope.configurationFingerprint === binding.configurationFingerprint
+                )
                 ? ("current" as const)
                 : ("stale" as const)
               : ("unknown" as const),
@@ -553,6 +700,13 @@ export class CodebaseArtifactStore extends Context.Service<
             graph: { ...graph, nodes, edges },
             sourceFingerprint: binding.sourceFingerprint,
             configurationFingerprint: binding.configurationFingerprint,
+            ...(binding.sourceRange ? { sourceRange: binding.sourceRange } : {}),
+            inspectedSources: bundle.supplied.map((source) => ({
+              path: source.path,
+              startLine: source.startLine,
+              endLine: source.endLine,
+              fingerprint: sourceByPath.get(source.path)!.fingerprint,
+            })),
             coverage: {
               inventoryFiles: binding.inventory.length,
               referencedFiles: new Set(
@@ -572,7 +726,8 @@ export class CodebaseArtifactStore extends Context.Service<
             previous.sourceFingerprint === document.sourceFingerprint &&
             previous.configurationFingerprint === document.configurationFingerprint &&
             serialize(previous.graph) === serialize(document.graph) &&
-            serialize(previous.coverage) === serialize(document.coverage)
+            serialize(previous.coverage) === serialize(document.coverage) &&
+            serialize(previous.inspectedSources) === serialize(document.inspectedSources)
           )
             return previous;
           return decode(CodebaseScope, serialize(document));
@@ -608,6 +763,26 @@ export class CodebaseArtifactStore extends Context.Service<
             const accepted = yield* io(async () => {
               const target = scopeFile(binding.scopeId);
               const text = serialize(document);
+              const indexTextBefore = await readText(
+                binding.checkout,
+                indexFile,
+                CODEBASE_LIMITS.indexBytes,
+              );
+              const index =
+                indexTextBefore === null
+                  ? emptyCodebaseIndex()
+                  : decode(CodebaseIndex, indexTextBefore);
+              const nextIndex = updateCodebaseIndex(
+                index,
+                document,
+                binding.inventory.map(({ text: _text, ...file }) => file),
+              );
+              const indexText = serialize(nextIndex);
+              if (Buffer.byteLength(indexText) > CODEBASE_LIMITS.indexBytes)
+                throw error(
+                  "invalid",
+                  "The file index exceeds its 32 MiB limit. Select a smaller project root.",
+                );
               if (Buffer.byteLength(text) > CODEBASE_LIMITS.documentBytes)
                 throw error("invalid", "Map document is too large.");
               if (
@@ -632,6 +807,7 @@ export class CodebaseArtifactStore extends Context.Service<
                 );
               if (revision(text) !== binding.expectedRevision)
                 await replace(binding.checkout, target, text);
+              await replace(binding.checkout, indexFile, indexText);
               return digest(text);
             });
             const after = yield* prepare(binding);
@@ -694,7 +870,7 @@ export class CodebaseArtifactStore extends Context.Service<
           ),
         );
       });
-      return { read, prepare, validate, publish, configure };
+      return { read, prepare, validate, publish, configure, catalog, loadScope };
     }),
   );
 }
