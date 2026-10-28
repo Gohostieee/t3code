@@ -1,5 +1,8 @@
 import { DEFAULT_TERMINAL_ID, EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { type KnownTerminalSession } from "@t3tools/client-runtime/state/terminal";
+import {
+  hasTerminalSessionEnded,
+  type KnownTerminalSession,
+} from "@t3tools/client-runtime/state/terminal";
 import type { MenuAction } from "@react-native-menu/menu";
 import { SymbolView } from "../../components/AppSymbol";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
@@ -853,7 +856,10 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
       return;
     }
     // The web drawer treats both exited and closed as session end.
-    const sessionEnded = terminal.status === "exited" || terminal.status === "closed";
+    const sessionEnded = hasTerminalSessionEnded({
+      status: terminal.status,
+      version: terminal.version,
+    });
     if (!sessionEnded || runningTerminalKeyRef.current !== terminalKey) {
       return;
     }
@@ -884,6 +890,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     navigation,
     selectedThread,
     terminal.status,
+    terminal.version,
     terminalAttachInput,
     terminalId,
     terminalKey,

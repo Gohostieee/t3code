@@ -7,6 +7,7 @@ import {
   applyTerminalMetadataStreamEvent,
   combineTerminalSessionState,
   EMPTY_TERMINAL_BUFFER_STATE,
+  hasTerminalSessionEnded,
   selectRunningSubprocessTerminalIds,
 } from "./terminalSession.ts";
 
@@ -31,6 +32,21 @@ const BASE_SNAPSHOT: TerminalSessionSnapshot = {
 };
 
 describe("terminal session reducers", () => {
+  it.each(["closed", "exited"] as const)(
+    "waits for an attach snapshot before treating %s as a session end",
+    (status) => {
+      expect(hasTerminalSessionEnded({ status, version: 0 })).toBe(false);
+      expect(hasTerminalSessionEnded({ status, version: 1 })).toBe(true);
+    },
+  );
+
+  it.each(["starting", "running", "error"] as const)(
+    "does not treat %s as a session end",
+    (status) => {
+      expect(hasTerminalSessionEnded({ status, version: 1 })).toBe(false);
+    },
+  );
+
   it("prefers live attach status over stale metadata after the attach stream starts", () => {
     const summary = applyTerminalMetadataStreamEvent([], {
       type: "snapshot",

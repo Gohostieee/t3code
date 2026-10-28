@@ -66,6 +66,13 @@ export const DEFAULT_MAX_TERMINAL_BUFFER_BYTES = 512 * 1024;
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
+/** An attach snapshot or event must confirm an exit before a client closes the session. */
+export function hasTerminalSessionEnded(
+  session: Pick<TerminalSessionState, "status" | "version">,
+): boolean {
+  return session.version > 0 && (session.status === "closed" || session.status === "exited");
+}
+
 function trimBufferToBytes(buffer: string, maxBufferBytes: number): string {
   if (maxBufferBytes <= 0) {
     return "";

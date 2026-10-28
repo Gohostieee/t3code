@@ -322,6 +322,50 @@ it.layer(
     }),
   );
 
+  it.effect("keeps shells running across client detaches, thread switches, and idle time", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        subprocessPollIntervalMs: 60 * 60_000,
+        processKillGraceMs: 0,
+      });
+      const first = yield* manager.open(openInput());
+      const secondInput = openInput({ threadId: "thread-2" });
+      const second = yield* manager.open(secondInput);
+
+      for (const input of [openInput(), secondInput, openInput()]) {
+        yield* Effect.acquireRelease(
+          manager.attachStream(input, () => Effect.void),
+          (unsubscribe) => Effect.sync(unsubscribe),
+        ).pipe(Effect.scoped);
+      }
+
+      yield* TestClock.adjust("10 minutes");
+
+      const reattached = yield* Ref.make<TerminalAttachStreamEvent | null>(null);
+      const unsubscribe = yield* manager.attachStream(openInput(), (event) =>
+        Ref.set(reattached, event),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+
+      expect(yield* Ref.get(reattached)).toMatchObject({
+        type: "snapshot",
+        snapshot: { status: "running", pid: first.pid },
+      });
+      expect(yield* manager.open(secondInput)).toMatchObject({
+        status: "running",
+        pid: second.pid,
+      });
+      expect(ptyAdapter.processes).toHaveLength(2);
+      expect(ptyAdapter.processes.every((process) => process.killSignals.length === 0)).toBe(true);
+      yield* manager.write({
+        threadId: first.threadId,
+        terminalId: first.terminalId,
+        data: "still alive",
+      });
+      expect(ptyAdapter.processes[0]?.writes).toEqual(["still alive"]);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
   it.effect("keeps attach streams live when a terminal id is closed and reopened", () =>
     Effect.gen(function* () {
       const { manager, ptyAdapter } = yield* createManager();

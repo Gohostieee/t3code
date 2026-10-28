@@ -1,4 +1,5 @@
 import { DEFAULT_TERMINAL_ID, type EnvironmentId, type ThreadId } from "@t3tools/contracts";
+import { hasTerminalSessionEnded } from "@t3tools/client-runtime/state/terminal";
 import { SymbolView } from "../../components/AppSymbol";
 import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import { Pressable, View } from "react-native";
@@ -135,7 +136,10 @@ export const ThreadTerminalPanel = memo(function ThreadTerminalPanel(
       return;
     }
     // The web drawer treats both exited and closed as session end.
-    const sessionEnded = terminal.status === "exited" || terminal.status === "closed";
+    const sessionEnded = hasTerminalSessionEnded({
+      status: terminal.status,
+      version: terminal.version,
+    });
     if (!sessionEnded || runningTerminalKeyRef.current !== terminalKey) {
       return;
     }
@@ -151,7 +155,16 @@ export const ThreadTerminalPanel = memo(function ThreadTerminalPanel(
       },
     });
     props.onClose();
-  }, [attachInput, closeTerminal, isRunning, props, terminal.status, terminalId, terminalKey]);
+  }, [
+    attachInput,
+    closeTerminal,
+    isRunning,
+    props,
+    terminal.status,
+    terminal.version,
+    terminalId,
+    terminalKey,
+  ]);
 
   const sendResize = useCallback(
     (size: TerminalGridSize) => {

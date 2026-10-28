@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
+import {
+  combineTerminalSessionState,
+  EMPTY_TERMINAL_BUFFER_STATE,
+} from "@t3tools/client-runtime/state/terminal";
 
 import {
   resolveTerminalSelectionActionPosition,
@@ -85,8 +89,35 @@ describe("resolveTerminalSelectionActionPosition", () => {
   });
 
   it("handles an exit that lands while the terminal surface is still loading", () => {
-    expect(shouldHandleTerminalExit("exited", "running", false)).toBe(true);
-    expect(shouldHandleTerminalExit("exited", "exited", false)).toBe(false);
-    expect(shouldHandleTerminalExit("closed", "running", true)).toBe(false);
+    expect(shouldHandleTerminalExit("exited", "running", false, 1)).toBe(true);
+    expect(shouldHandleTerminalExit("exited", "exited", false, 1)).toBe(false);
+    expect(shouldHandleTerminalExit("closed", "running", true, 1)).toBe(false);
+  });
+
+  it("does not close a running terminal while its attach subscription is loading again", () => {
+    const pending = combineTerminalSessionState(null, EMPTY_TERMINAL_BUFFER_STATE);
+
+    expect(shouldHandleTerminalExit(pending.status, "running", false, pending.version)).toBe(false);
+  });
+
+  it("does not close a terminal from stale exited metadata before an attach snapshot", () => {
+    const pending = combineTerminalSessionState(
+      {
+        threadId: "thread-1",
+        terminalId: "default",
+        cwd: "/repo",
+        worktreePath: null,
+        status: "exited",
+        pid: null,
+        exitCode: 0,
+        exitSignal: null,
+        hasRunningSubprocess: false,
+        label: "Terminal",
+        updatedAt: "2026-04-01T00:00:00.000Z",
+      },
+      EMPTY_TERMINAL_BUFFER_STATE,
+    );
+
+    expect(shouldHandleTerminalExit(pending.status, "running", false, pending.version)).toBe(false);
   });
 });
